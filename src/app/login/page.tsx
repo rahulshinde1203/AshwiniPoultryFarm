@@ -44,10 +44,10 @@ export default function LoginPage() {
                 type="text" required value={form.loginId}
                 onChange={e => setForm({ ...form, loginId: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent transition text-sm"
-                placeholder="e.g. USR001 or admin@ashwini.com"
+                placeholder="Enter Your Email ID"
                 autoComplete="username"
               />
-              <p className="text-xs text-gray-400 mt-1">Enter your assigned Login ID or email address</p>
+        
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>

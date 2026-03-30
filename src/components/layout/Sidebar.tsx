@@ -16,7 +16,7 @@ const adminLinks = [
   { href: '/dashboard/admin/edit-requests',  label: 'Edit History',    icon: '📝' },
   { href: '/dashboard/admin/payments',       label: 'View Payments',   icon: '💳' },
   { href: '/dashboard/admin/ledger',         label: 'Ledger Report',   icon: '📒' },
-  //{ href: '/dashboard/admin/bank-statements',label: 'Bank Statements', icon: '📑' },
+  { href: '/dashboard/admin/bank-statements',label: 'Bank Statements', icon: '📑' },
   { href: '/dashboard/admin/chat',           label: 'Team Chat',       icon: '💬' },
 ];
 
@@ -37,7 +37,7 @@ const accountantLinks = [
   { href: '/dashboard/accountant/outstanding',         label: 'Outstanding',     icon: '📋' },
   { href: '/dashboard/accountant/transactions',        label: 'Transactions',    icon: '🔄' },
   { href: '/dashboard/accountant/expenses',            label: 'Expenses',        icon: '💸' },
-  // { href: '/dashboard/accountant/bank-statements',     label: 'Bank Statements', icon: '📑' },
+  { href: '/dashboard/accountant/bank-statements',     label: 'Bank Statements', icon: '📑' },
   { href: '/dashboard/accountant/ledger',              label: 'Ledger Report',   icon: '📒' },
   { href: '/dashboard/accountant/chat',                label: 'Team Chat',       icon: '💬' },
 ];
