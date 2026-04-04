@@ -58,19 +58,6 @@ npm run dev
 
 The system uses **Login IDs** (not emails) for authentication. Login IDs are auto-generated when admin creates a user.
 
-### Login ID Format
-| Role | Format | Example |
-|------|--------|---------|
-| Admin | `ADM001`, `ADM002` … | `ADM001` |
-| Accountant | `ACC001`, `ACC002` … | `ACC001` |
-| Salesperson | `SLS001`, `SLS002` … | `SLS001` |
-
-### Default Seeded Accounts
-| Login ID | Password | Role |
-|----------|----------|------|
-| `ADM001` | `Admin@123` | Admin |
-| `ACC001` | `Accounts@123` | Accountant |
-| `SLS001` | `Sales@123` | Salesperson |
 
 > Email login also works for backward compatibility.
 
