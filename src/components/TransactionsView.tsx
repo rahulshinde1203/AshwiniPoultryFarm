@@ -12,7 +12,8 @@ interface Props {
   canDelete?: boolean;  // admin can delete purchases
 }
 
-const fmt = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const fmt    = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const pdfFmt = (n: number) => `Rs.${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
 export default function TransactionsView({ readOnly = false, canDelete = false }: Props) {
   const [purchases, setPurchases]   = useState<any[]>([]);
@@ -135,10 +136,10 @@ export default function TransactionsView({ readOnly = false, canDelete = false }
             new Date(r.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
             r.vehicleNumber || '—', r.company?.name || '', r.trader?.name || '', r.createdBy?.name || '',
             (r.numberOfBirds||0).toLocaleString('en-IN'), r.totalWeight?.toFixed(3),
-            `₹${r.purchaseRatePerKg}`, `₹${r.saleRatePerKg}`,
-            fmt(r.purchaseTotalAmount||0), fmt(r.saleTotalAmount||0), fmt(r.grossProfit||0),
+            `Rs.${r.purchaseRatePerKg}`, `Rs.${r.saleRatePerKg}`,
+            pdfFmt(r.purchaseTotalAmount||0), pdfFmt(r.saleTotalAmount||0), pdfFmt(r.grossProfit||0),
           ]),
-          ['TOTAL','','','','', totalBirds.toLocaleString('en-IN'), totalWeight.toFixed(3), '','', fmt(totalPurchase), fmt(totalSale), fmt(totalProfit)],
+          ['TOTAL','','','','', totalBirds.toLocaleString('en-IN'), totalWeight.toFixed(3), '','', pdfFmt(totalPurchase), pdfFmt(totalSale), pdfFmt(totalProfit)],
         ],
         styles: { fontSize: 7 },
         headStyles: { fillColor: [249, 115, 22] },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { syncBankStatement } from '@/lib/bank-statement-sync';
 
 function ser(e: any) {
   return { ...e, _id: String(e.id), date: e.date?.toISOString(),
@@ -36,12 +37,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Expense type, amount and payment method are required' }, { status: 400 });
   if (!bankAccount)
     return NextResponse.json({ error: 'Bank account is required' }, { status: 400 });
+
+  const userId = parseInt((session!.user as any).id);
   const expense = await prisma.expense.create({
-    data: { date: date ? new Date(date) : new Date(), expenseType, amount: parseFloat(amount),
-            transactionId: transactionId || '', bankAccountId: bankAccount ? parseInt(bankAccount) : null,
-            paymentMethod: paymentMethod as any, notes: notes || '',
-            createdBy: parseInt((session!.user as any).id) },
+    data: {
+      date: date ? new Date(date) : new Date(),
+      expenseType, amount: parseFloat(amount),
+      transactionId: transactionId || '',
+      bankAccountId: parseInt(bankAccount),
+      paymentMethod: paymentMethod as any,
+      notes: notes || '',
+      createdBy: userId,
+    },
     include: { creator: { select: { id:true, name:true } }, bankAccount: true },
   });
+
+  // ── AUTO SYNC BANK STATEMENT ──────────────────────────────────────────
+  try {
+    await syncBankStatement({
+      bankAccountId: parseInt(bankAccount),
+      date: expense.date,
+      credit: 0, debit: expense.amount,
+      description: `Expense: ${expenseType}`,
+      remark: `Expense Type: ${expenseType}`,
+      transactionId: transactionId || '',
+      sourceType: 'expense',
+      sourceId: expense.id,
+      createdBy: userId,
+    });
+  } catch (syncErr) {
+    console.error('Bank statement sync error:', syncErr);
+  }
+
   return NextResponse.json({ expense: ser(expense) }, { status: 201 });
 }

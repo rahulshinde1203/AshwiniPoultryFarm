@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-const LABELS: Record<string, string> = { date: 'Date', company: 'Company', trader: 'Trader', numberOfBirds: 'No. of Birds', totalWeight: 'Total Weight (Kg)', purchaseRatePerKg: 'Purchase Rate/Kg', saleRatePerKg: 'Sale Rate/Kg', vehicleNumber: 'Vehicle Number', notes: 'Notes' };
+const LABELS: Record<string, string> = { date: 'Date', companyId: 'Company', traderId: 'Trader', numberOfBirds: 'No. of Birds', totalWeight: 'Total Weight (Kg)', purchaseRatePerKg: 'Purchase Rate/Kg', saleRatePerKg: 'Sale Rate/Kg', vehicleNumber: 'Vehicle Number', notes: 'Notes' };
 
 export default function AccountantEditRequestsPage() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -87,11 +87,26 @@ export default function AccountantEditRequestsPage() {
                       const req_ = req.requestedData?.[field];
                       const changed = String(orig ?? '') !== String(req_ ?? '');
                       if (!orig && !req_) return null;
+                      // Show names for company/trader instead of IDs
+                      const displayOrig = field === 'date' && orig
+                        ? new Date(orig).toLocaleDateString('en-IN')
+                        : field === 'companyId'
+                          ? (req.originalData?.companyName || String(orig ?? '—'))
+                          : field === 'traderId'
+                            ? (req.originalData?.traderName || String(orig ?? '—'))
+                            : String(orig ?? '—');
+                      const displayReq = field === 'date' && req_
+                        ? new Date(req_).toLocaleDateString('en-IN')
+                        : field === 'companyId'
+                          ? (req.requestedData?.companyName || String(req_ ?? '—'))
+                          : field === 'traderId'
+                            ? (req.requestedData?.traderName || String(req_ ?? '—'))
+                            : String(req_ ?? '—');
                       return (
                         <tr key={field} className={changed ? 'bg-orange-50/40' : ''}>
                           <td className="px-3 py-2 text-gray-600 font-medium">{LABELS[field]}</td>
-                          <td className={`px-3 py-2 ${changed ? 'text-red-600 line-through' : 'text-gray-600'}`}>{field === 'date' && orig ? new Date(orig).toLocaleDateString('en-IN') : String(orig ?? '—')}</td>
-                          <td className={`px-3 py-2 ${changed ? 'text-green-700 font-semibold' : 'text-gray-600'}`}>{field === 'date' && req_ ? new Date(req_).toLocaleDateString('en-IN') : String(req_ ?? '—')}</td>
+                          <td className={`px-3 py-2 ${changed ? 'text-red-600 line-through' : 'text-gray-600'}`}>{displayOrig}</td>
+                          <td className={`px-3 py-2 ${changed ? 'text-green-700 font-semibold' : 'text-gray-600'}`}>{displayReq}</td>
                         </tr>
                       );
                     })}

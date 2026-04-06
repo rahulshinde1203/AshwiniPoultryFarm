@@ -77,7 +77,8 @@ export default function VerifyPaymentsPage() {
   const verifiedAmt = filtered.filter(p=>p.status==='verified').reduce((s,p)=>s+p.amount,0);
   const rejectedAmt = filtered.filter(p=>p.status==='rejected').reduce((s,p)=>s+p.amount,0);
 
-  const fmt = (n: number) => `₹${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+  const fmt    = (n: number) => `₹${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+  const pdfFmt = (n: number) => `Rs.${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
   const sc: Record<string,string> = {
     pending:  'bg-yellow-100 text-yellow-700 border border-yellow-200',
     verified: 'bg-green-100 text-green-700 border border-green-200',
@@ -148,7 +149,7 @@ export default function VerifyPaymentsPage() {
       const rows = filtered.map(p => ({
         'Date': new Date(p.date).toLocaleDateString('en-IN'),
         'Type': p.paymentFor, 'Party': p.company?.name||p.trader?.name||'',
-        'Amount (₹)': p.amount, 'Method': p.paymentMethod||'',
+        'Amount (Rs.)': p.amount, 'Method': p.paymentMethod||'',
         'Transaction ID': getTxnId(p)||'', 'Bank': p.bankAccount?.bankName||'',
         'Requested By': p.createdBy?.name||'', 'Status': p.status,
         'Rejection Reason': p.rejectionReason||'', 'Notes': p.notes||'',

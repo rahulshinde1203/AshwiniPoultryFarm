@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 
-const LABELS: Record<string,string> = { date:'Date',company:'Company',trader:'Trader',numberOfBirds:'No. of Birds',totalWeight:'Total Weight (Kg)',purchaseRatePerKg:'Purchase Rate/Kg',saleRatePerKg:'Sale Rate/Kg',vehicleNumber:'Vehicle Number',notes:'Notes' };
+const LABELS: Record<string,string> = { date:'Date',companyId:'Company',traderId:'Trader',numberOfBirds:'No. of Birds',totalWeight:'Total Weight (Kg)',purchaseRatePerKg:'Purchase Rate/Kg',saleRatePerKg:'Sale Rate/Kg',vehicleNumber:'Vehicle Number',notes:'Notes' };
 const sc: Record<string,string> = { pending:'bg-yellow-100 text-yellow-700 border border-yellow-200',approved:'bg-green-100 text-green-700 border border-green-200',rejected:'bg-red-100 text-red-700 border border-red-200' };
 const fmtDate = (d:string) => new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 
@@ -99,11 +99,11 @@ export default function AdminEditHistoryPage() {
                         <div className="grid grid-cols-2 gap-6 bg-white rounded-xl border border-gray-100 p-4">
                           <div>
                             <p className="text-xs font-bold text-red-500 uppercase mb-2 flex items-center gap-1">📄 Before</p>
-                            {Object.keys(LABELS).map(field=>{const val=req.originalData?.[field];if(val==null&&val!==0)return null;const changed=String(val)!==String(req.requestedData?.[field]??'');return(<div key={field} className={`flex gap-2 text-xs py-0.5 ${changed?'text-red-600':'text-gray-600'}`}><span className="font-semibold w-36 shrink-0 text-gray-500">{LABELS[field]}:</span><span className={changed?'line-through':''}>{field==='date'?new Date(val).toLocaleDateString('en-IN'):String(val)}</span></div>);})}
+                            {Object.keys(LABELS).map(field=>{const val=req.originalData?.[field];if(val==null&&val!==0)return null;const changed=String(val)!==String(req.requestedData?.[field]??'');const display=field==='date'?new Date(val).toLocaleDateString('en-IN'):field==='companyId'?(req.originalData?.companyName||String(val)):field==='traderId'?(req.originalData?.traderName||String(val)):String(val);return(<div key={field} className={`flex gap-2 text-xs py-0.5 ${changed?'text-red-600':'text-gray-600'}`}><span className="font-semibold w-36 shrink-0 text-gray-500">{LABELS[field]}:</span><span className={changed?'line-through':''}>{display}</span></div>);})}
                           </div>
                           <div>
                             <p className="text-xs font-bold text-green-600 uppercase mb-2 flex items-center gap-1">✏️ After</p>
-                            {Object.keys(LABELS).map(field=>{const val=req.requestedData?.[field];if(val==null&&val!==0)return null;const changed=String(val)!==String(req.originalData?.[field]??'');return(<div key={field} className={`flex gap-2 text-xs py-0.5 ${changed?'text-green-700 font-semibold':'text-gray-600'}`}><span className="font-semibold w-36 shrink-0 text-gray-500">{LABELS[field]}:</span><span>{field==='date'?new Date(val).toLocaleDateString('en-IN'):String(val)}</span></div>);})}
+                            {Object.keys(LABELS).map(field=>{const val=req.requestedData?.[field];if(val==null&&val!==0)return null;const changed=String(val)!==String(req.originalData?.[field]??'');const display=field==='date'?new Date(val).toLocaleDateString('en-IN'):field==='companyId'?(req.requestedData?.companyName||String(val)):field==='traderId'?(req.requestedData?.traderName||String(val)):String(val);return(<div key={field} className={`flex gap-2 text-xs py-0.5 ${changed?'text-green-700 font-semibold':'text-gray-600'}`}><span className="font-semibold w-36 shrink-0 text-gray-500">{LABELS[field]}:</span><span>{display}</span></div>);})}
                           </div>
                         </div>
                         {req.reviewNote&&<div className="mt-3 pt-2 text-xs text-gray-500">Reviewer Note: <span className="font-semibold text-gray-700">"{req.reviewNote}"</span></div>}

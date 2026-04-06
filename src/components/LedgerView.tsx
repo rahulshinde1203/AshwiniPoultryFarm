@@ -40,11 +40,8 @@ export default function LedgerView() {
   const [generated,  setGenerated]  = useState(false);
   const [dropdownLoading, setDropdownLoading] = useState(true);
 
-  // Load dropdowns via ledger API so salesperson only sees their own traders/companies
   useEffect(() => {
     setDropdownLoading(true);
-    // Use a dummy fetch with partyId=0 just to get the dropdown lists (API returns them regardless)
-    // We fetch both party types to populate both dropdowns
     Promise.all([
       fetch('/api/ledger?partyType=trader&partyId=0&period=all').then(r=>r.json()),
       fetch('/api/ledger?partyType=company&partyId=0&period=all').then(r=>r.json()),
@@ -82,7 +79,6 @@ export default function LedgerView() {
     setRows([]); setPartyId(''); setGenerated(false); setFinalBal(0); setPartyName('');
   };
 
-  /* ── Period label ── */
   const periodLabel = period === 'all' ? 'All Time'
     : period === 'day'   ? fmtDate(selDate + 'T00:00:00')
     : period === 'month' ? `${MONTHS[selMonth-1]} ${selYear}`
@@ -92,10 +88,14 @@ export default function LedgerView() {
   const exportCSV = () => {
     if (!rows.length) return;
     const isTrader = partyType === 'trader';
-    const headers = ['Date','Vehicle No','Birds','Weight (Kg)','Avg Weight','Rate/Kg','Total Amount',
-      isTrader ? 'Credit Amount' : 'Debit Amount', 'Method','Transaction ID','Closing Balance','Status'];
-    const dataRows = rows.map(r => [
+    const headers = ['#','Date','Type','Vehicle No','Birds','Weight (Kg)','Avg Weight','Rate/Kg',
+      'Total Amount', isTrader ? 'Credit Amount' : 'Debit Amount',
+      'Method','Transaction ID','Closing Balance','DR/CR'];
+
+    const dataRows = rows.map((r, i) => [
+      i + 1,
       fmtDate(r.date),
+      r.rowType === 'opening' ? 'Opening Balance' : r.rowType === 'txn' ? 'Transaction' : 'Payment',
       r.vehicleNumber || '',
       r.numberOfBirds != null ? r.numberOfBirds : '',
       r.totalWeight   != null ? r.totalWeight.toFixed(3) : '',
@@ -108,6 +108,7 @@ export default function LedgerView() {
       Math.abs(r.closingBalance).toFixed(2),
       r.closingBalance > 0.01 ? 'DR' : r.closingBalance < -0.01 ? 'CR' : 'NIL',
     ]);
+
     const csv = [headers, ...dataRows]
       .map(row => row.map(v => `"${String(v).replace(/"/g,'""')}"`).join(','))
       .join('\n');
@@ -128,7 +129,6 @@ export default function LedgerView() {
       const isTrader = partyType === 'trader';
       const doc = new jsPDF({ orientation: 'landscape' });
 
-      // Header
       doc.setFontSize(18); doc.setTextColor(249, 115, 22);
       doc.text('Ashwini Poultry Farm', 14, 16);
       doc.setTextColor(0, 0, 0);
@@ -141,26 +141,28 @@ export default function LedgerView() {
       const finalB = fmtBal(finalBal);
       doc.setFontSize(10);
       doc.setTextColor(finalBal > 0.01 ? 220 : 22, finalBal > 0.01 ? 38 : 163, finalBal > 0.01 ? 38 : 74);
-      doc.text(`Closing Balance: ₹${Math.abs(finalBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${finalB.label}`, 14, 51);
+      doc.text(`Closing Balance: Rs.${Math.abs(finalBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${finalB.label}`, 14, 51);
       doc.setTextColor(0, 0, 0);
 
-      const head = [['Date','Vehicle','Birds','Wt(Kg)','Avg Wt','Rate',
+      const head = [['#','Date','Type','Vehicle','Birds','Wt(Kg)','Avg Wt','Rate',
         'Total Amt', isTrader ? 'Credit' : 'Debit', 'Method','Txn ID','Balance','']];
 
-      const body = rows.map(r => {
+      const body = rows.map((r, i) => {
         const b = fmtBal(r.closingBalance);
         return [
+          i + 1,
           fmtDate(r.date),
+          r.rowType === 'opening' ? 'Opening Bal' : r.rowType === 'txn' ? 'Transaction' : 'Payment',
           r.vehicleNumber || '—',
           r.numberOfBirds != null ? r.numberOfBirds.toLocaleString('en-IN') : '—',
           r.totalWeight   != null ? r.totalWeight.toFixed(3) : '—',
           r.avgWeight     != null ? r.avgWeight.toFixed(3) : '—',
-          r.rate          != null ? `₹${r.rate}` : '—',
-          r.totalAmount   != null ? `₹${r.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—',
-          r.creditDebitAmt != null ? `₹${r.creditDebitAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—',
+          r.rate          != null ? `Rs.${r.rate}` : '—',
+          r.totalAmount   != null ? `Rs.${r.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—',
+          r.creditDebitAmt != null ? `Rs.${r.creditDebitAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—',
           r.paymentMethod || '—',
           r.transactionId || '—',
-          `₹${Math.abs(r.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+          `Rs.${Math.abs(r.closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
           b.label,
         ];
       });
@@ -170,17 +172,22 @@ export default function LedgerView() {
         styles: { fontSize: 7.5 },
         headStyles: { fillColor: [249, 115, 22], textColor: 255 },
         didParseCell: (data: any) => {
-          if (data.section === 'body' && data.column.index === 11) {
+          if (data.section === 'body') {
             const row = rows[data.row.index];
-            if (row) {
+            if (!row) return;
+            // Style closing balance column
+            if (data.column.index === 13) {
               data.cell.styles.textColor = row.closingBalance > 0.01 ? [220, 38, 38] : row.closingBalance < -0.01 ? [22, 163, 74] : [107, 114, 128];
               data.cell.styles.fontStyle = 'bold';
             }
-          }
-          // Shade payment rows differently
-          if (data.section === 'body') {
-            const row = rows[data.row.index];
-            if (row?.rowType === 'payment') {
+            // Style opening balance row
+            if (row.rowType === 'opening') {
+              data.cell.styles.fillColor = [240, 240, 240];
+              data.cell.styles.fontStyle = 'bold';
+              data.cell.styles.textColor = [50, 50, 50];
+            }
+            // Shade payment rows
+            if (row.rowType === 'payment') {
               data.cell.styles.fillColor = [240, 253, 244];
             }
           }
@@ -192,9 +199,12 @@ export default function LedgerView() {
     } catch { toast.error('PDF export failed'); }
   };
 
-  const finalBalInfo = fmtBal(finalBal);
-  const txnCount  = rows.filter(r => r.rowType === 'txn').length;
-  const payCount  = rows.filter(r => r.rowType === 'payment').length;
+  const finalBalInfo  = fmtBal(finalBal);
+  const txnCount      = rows.filter(r => r.rowType === 'txn').length;
+  const payCount      = rows.filter(r => r.rowType === 'payment').length;
+  const hasOpening    = rows.length > 0 && rows[0].rowType === 'opening';
+  const openingRow    = hasOpening ? rows[0] : null;
+  const openingBalInf = openingRow ? fmtBal(openingRow.closingBalance) : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -251,6 +261,13 @@ export default function LedgerView() {
                 </button>
               ))}
             </div>
+
+            {period !== 'all' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-3 text-xs text-blue-700 font-medium">
+                📌 Opening balance (previous period closing) will appear as the first row
+              </div>
+            )}
+
             {period === 'day' && (
               <input type="date" value={selDate} max={new Date().toISOString().split('T')[0]}
                 onChange={e => setSelDate(e.target.value)} className={inp} />
@@ -268,10 +285,10 @@ export default function LedgerView() {
             {period === 'range' && (
               <div className="flex items-center gap-3 flex-wrap">
                 <input type="date" value={rangeStart} max={new Date().toISOString().split('T')[0]}
-                  onChange={e => setRangeStart(e.target.value)} className={inp} placeholder="From" />
+                  onChange={e => setRangeStart(e.target.value)} className={inp} />
                 <span className="text-gray-400 text-sm">to</span>
                 <input type="date" value={rangeEnd} max={new Date().toISOString().split('T')[0]}
-                  onChange={e => setRangeEnd(e.target.value)} className={inp} placeholder="To" />
+                  onChange={e => setRangeEnd(e.target.value)} className={inp} />
               </div>
             )}
           </div>
@@ -308,15 +325,25 @@ export default function LedgerView() {
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-3">
-                  {/* Closing balance */}
-                  <div className={`rounded-xl px-4 py-3 border text-right ${finalBal > 0.01 ? 'bg-red-50 border-red-200' : finalBal < -0.01 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Closing Balance</p>
-                    <p className={`text-xl font-extrabold ${finalBalInfo.color}`}>
-                      {finalBalInfo.text} <span className="text-sm">{finalBalInfo.label}</span>
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {finalBal > 0.01 ? `${partyType === 'trader' ? 'Trader owes you' : 'You owe company'}` : finalBal < -0.01 ? 'Advance/credit balance' : 'Fully settled'}
-                    </p>
+                  {/* Opening + Closing balance cards */}
+                  <div className="flex gap-3">
+                    {openingRow && openingBalInf && (
+                      <div className="rounded-xl px-4 py-3 border bg-gray-50 border-gray-200 text-right">
+                        <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Opening Balance</p>
+                        <p className={`text-base font-extrabold ${openingBalInf.color}`}>
+                          {openingBalInf.text} <span className="text-xs">{openingBalInf.label}</span>
+                        </p>
+                      </div>
+                    )}
+                    <div className={`rounded-xl px-4 py-3 border text-right ${finalBal > 0.01 ? 'bg-red-50 border-red-200' : finalBal < -0.01 ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Closing Balance</p>
+                      <p className={`text-xl font-extrabold ${finalBalInfo.color}`}>
+                        {finalBalInfo.text} <span className="text-sm">{finalBalInfo.label}</span>
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {finalBal > 0.01 ? `${partyType === 'trader' ? 'Trader owes you' : 'You owe company'}` : finalBal < -0.01 ? 'Advance/credit balance' : 'Fully settled'}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={exportCSV}
@@ -348,14 +375,32 @@ export default function LedgerView() {
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                       {rows.map((r, i) => {
-                        const bal = fmtBal(r.closingBalance);
-                        const isTxn = r.rowType === 'txn';
+                        const bal    = fmtBal(r.closingBalance);
+                        const isTxn  = r.rowType === 'txn';
+                        const isPay  = r.rowType === 'payment';
+                        const isOpen = r.rowType === 'opening';
+
+                        // ── Opening Balance Row ──
+                        if (isOpen) {
+                          return (
+                            <tr key={i} className="bg-gray-100 border-b-2 border-gray-300">
+                              <td className="px-3 py-3 text-xs text-gray-400 font-bold">—</td>
+                              <td className="px-3 py-3 text-xs text-gray-600 whitespace-nowrap font-bold">{fmtDate(r.date)}</td>
+                              <td colSpan={9} className="px-3 py-3 text-xs font-bold text-gray-600 italic">
+                                📌 {r.description}
+                              </td>
+                              <td className={`px-3 py-3 text-xs font-extrabold whitespace-nowrap ${bal.color}`}>
+                                {bal.text}
+                              </td>
+                              <td className={`px-3 py-3 text-xs font-extrabold ${bal.color}`}>{bal.label}</td>
+                            </tr>
+                          );
+                        }
+
                         return (
                           <tr key={i} className={`transition ${isTxn ? 'hover:bg-orange-50/40' : 'bg-green-50/30 hover:bg-green-50/60'}`}>
-                            <td className="px-3 py-2.5 text-xs text-gray-400">{i + 1}</td>
+                            <td className="px-3 py-2.5 text-xs text-gray-400">{i + (hasOpening ? 0 : 1)}</td>
                             <td className="px-3 py-2.5 text-xs text-gray-600 whitespace-nowrap">{fmtDate(r.date)}</td>
-
-                            {/* TXN-only columns */}
                             <td className="px-3 py-2.5 text-xs font-mono text-gray-700">{isTxn ? (r.vehicleNumber || '—') : ''}</td>
                             <td className="px-3 py-2.5 text-xs text-gray-700">{isTxn ? fmtNum(r.numberOfBirds) : ''}</td>
                             <td className="px-3 py-2.5 text-xs text-gray-700">{isTxn ? fmtWt(r.totalWeight) : ''}</td>
@@ -364,15 +409,11 @@ export default function LedgerView() {
                             <td className={`px-3 py-2.5 text-xs font-bold whitespace-nowrap ${isTxn ? 'text-gray-900' : ''}`}>
                               {isTxn ? fmtAmt(r.totalAmount) : ''}
                             </td>
-
-                            {/* PAYMENT-only columns */}
-                            <td className={`px-3 py-2.5 text-xs font-bold whitespace-nowrap ${!isTxn ? 'text-green-700' : ''}`}>
-                              {!isTxn ? fmtAmt(r.creditDebitAmt) : ''}
+                            <td className={`px-3 py-2.5 text-xs font-bold whitespace-nowrap ${isPay ? 'text-green-700' : ''}`}>
+                              {isPay ? fmtAmt(r.creditDebitAmt) : ''}
                             </td>
-                            <td className="px-3 py-2.5 text-xs text-gray-500">{!isTxn ? (r.paymentMethod || '—') : ''}</td>
-                            <td className="px-3 py-2.5 text-xs font-mono text-gray-500">{!isTxn ? (r.transactionId || '—') : ''}</td>
-
-                            {/* Running balance */}
+                            <td className="px-3 py-2.5 text-xs text-gray-500">{isPay ? (r.paymentMethod || '—') : ''}</td>
+                            <td className="px-3 py-2.5 text-xs font-mono text-gray-500">{isPay ? (r.transactionId || '—') : ''}</td>
                             <td className={`px-3 py-2.5 text-xs font-extrabold whitespace-nowrap ${bal.color}`}>
                               {bal.text}
                             </td>
@@ -400,6 +441,7 @@ export default function LedgerView() {
             {/* Legend */}
             <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 flex flex-wrap items-center gap-4 text-xs">
               <span className="font-bold text-gray-500">Legend:</span>
+              <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-gray-200 border border-gray-300 rounded inline-block"></span><span className="text-gray-600">Opening Balance</span></span>
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-orange-50 border border-orange-200 rounded inline-block"></span><span className="text-gray-600">Transaction row</span></span>
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-green-50 border border-green-200 rounded inline-block"></span><span className="text-gray-600">Payment row</span></span>
               <span className="text-red-600 font-semibold">DR = Amount owed</span>

@@ -38,7 +38,7 @@ export default function TransactionsPage() {
     fetch('/api/traders').then(r => r.json()).then(d => setTraders(d.traders || []));
     fetch('/api/edit-requests').then(r => r.json()).then(d => setMyRequests(d.requests || []));
   };
-  useEffect(() => { loadAll(); const t = setInterval(loadAll, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => { loadAll(); }, []);
 
   // Filter records by date, trader, company
   const filteredRecords = useMemo(() => {
@@ -85,7 +85,7 @@ export default function TransactionsPage() {
     const hasPending = myRequests.some(r => r.recordId?._id === rec._id && r.status === 'pending');
     if (hasPending) { toast.warning('Pending edit request already exists for this record'); return; }
     setEditingRecord(rec);
-    setEditForm({ date: new Date(rec.date).toISOString().split('T')[0], company: rec.company?._id || '', trader: rec.trader?._id || '', numberOfBirds: rec.numberOfBirds, totalWeight: rec.totalWeight, purchaseRatePerKg: rec.purchaseRatePerKg, saleRatePerKg: rec.saleRatePerKg, vehicleNumber: rec.vehicleNumber || '', notes: rec.notes || '' });
+    setEditForm({ date: new Date(rec.date).toISOString().split('T')[0], companyId: rec.company?._id || '', companyName: rec.company?.name || '', traderId: rec.trader?._id || '', traderName: rec.trader?.name || '', numberOfBirds: rec.numberOfBirds, totalWeight: rec.totalWeight, purchaseRatePerKg: rec.purchaseRatePerKg, saleRatePerKg: rec.saleRatePerKg, vehicleNumber: rec.vehicleNumber || '', notes: rec.notes || '' });
     setEditReason('');
   };
 
@@ -337,8 +337,8 @@ export default function TransactionsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className={lbl}>Date *</label><input type="date" required value={editForm.date} onChange={ef('date')} className={inp} /></div>
                 <div><label className={lbl}>Vehicle No. *</label><input required type="text" value={editForm.vehicleNumber} onChange={ef('vehicleNumber')} className={inp} /></div>
-                <div><label className={lbl}>Company *</label><select required value={editForm.company} onChange={ef('company')} className={inp}><option value="">Select...</option>{companies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}</select></div>
-                <div><label className={lbl}>Trader *</label><select required value={editForm.trader} onChange={ef('trader')} className={inp}><option value="">Select...</option>{traders.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}</select></div>
+                <div><label className={lbl}>Company *</label><select required value={editForm.companyId} onChange={e => setEditForm((p: any) => ({ ...p, companyId: e.target.value, companyName: companies.find(c => c._id === e.target.value)?.name || '' }))} className={inp}><option value="">Select...</option>{companies.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}</select></div>
+                <div><label className={lbl}>Trader *</label><select required value={editForm.traderId} onChange={e => setEditForm((p: any) => ({ ...p, traderId: e.target.value, traderName: traders.find(t => t._id === e.target.value)?.name || '' }))} className={inp}><option value="">Select...</option>{traders.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}</select></div>
                 <div><label className={lbl}>Purchase Rate/Kg *</label><input required type="number" min="0" step="0.01" value={editForm.purchaseRatePerKg} onChange={ef('purchaseRatePerKg')} className={inp} /></div>
                 <div><label className={lbl}>Sale Rate/Kg *</label><input required type="number" min="0" step="0.01" value={editForm.saleRatePerKg} onChange={ef('saleRatePerKg')} className={inp} /></div>
                 <div><label className={lbl}>No. of Birds *</label><input required type="number" min="1" value={editForm.numberOfBirds} onChange={ef('numberOfBirds')} className={inp} /></div>

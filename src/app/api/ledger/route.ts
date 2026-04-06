@@ -20,7 +20,19 @@ function buildDate(sp: URLSearchParams) {
   if (period === 'day'   && date)           return dayBounds(date);
   if (period === 'month' && month && year)  return { gte: new Date(year, month - 1, 1), lte: new Date(year, month, 0, 23, 59, 59, 999) };
   if (period === 'range' && start && end)   return { gte: dayBounds(start).gte, lte: dayBounds(end).lte };
-  return undefined; // 'all' = no filter
+  return undefined;
+}
+
+function getStartDate(sp: URLSearchParams): Date | null {
+  const period = sp.get('period') || 'all';
+  const date   = sp.get('date')  || '';
+  const month  = parseInt(sp.get('month') || '0');
+  const year   = parseInt(sp.get('year')  || '0');
+  const start  = sp.get('start') || '';
+  if (period === 'day'   && date)          return dayBounds(date).gte;
+  if (period === 'month' && month && year) return new Date(year, month - 1, 1);
+  if (period === 'range' && start)         return dayBounds(start).gte;
+  return null; // 'all' = no opening balance row
 }
 
 export async function GET(req: NextRequest) {
@@ -31,13 +43,13 @@ export async function GET(req: NextRequest) {
   const userId = parseInt((session!.user as any).id);
   const isSP   = role === 'salesperson';
 
-  const sp          = req.nextUrl.searchParams;
-  const partyType   = sp.get('partyType') || 'trader'; // 'trader' | 'company'
-  const partyId     = sp.get('partyId') ? parseInt(sp.get('partyId')!) : null;
-  const dateWhere   = buildDate(sp);
+  const sp        = req.nextUrl.searchParams;
+  const partyType = sp.get('partyType') || 'trader';
+  const partyId   = sp.get('partyId') ? parseInt(sp.get('partyId')!) : null;
+  const dateWhere = buildDate(sp);
+  const startDate = getStartDate(sp);
 
   if (!partyId) {
-    // Return only dropdown lists (used by LedgerView to populate selects)
     const [traders, companies] = await Promise.all([
       isSP
         ? prisma.trader.findMany({ where: { isActive: true, purchases: { some: { createdBy: userId } } }, select: { id: true, name: true }, orderBy: { name: 'asc' } })
@@ -47,16 +59,69 @@ export async function GET(req: NextRequest) {
         : prisma.company.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
     ]);
     return NextResponse.json({
-      rows: [], partyName: '', partyType, finalBalance: 0,
+      rows: [], partyName: '', partyType, finalBalance: 0, openingBalance: null,
       traders:   traders.map((t: any) => ({ _id: String(t.id), name: t.name })),
       companies: companies.map((c: any) => ({ _id: String(c.id), name: c.name })),
       role,
     });
   }
 
-  // ── 1. Fetch purchases ────────────────────────────────────────────────────
-  const purchaseWhere: any = { date: dateWhere ? dateWhere : undefined };
-  if (!purchaseWhere.date) delete purchaseWhere.date;
+  // ── 1. Opening Balance (previous day closing) ────────────────────────────
+  let openingBalanceRow: any = null;
+
+  if (startDate) {
+    // Last moment before filter starts
+    const prevDayEnd = new Date(startDate.getTime() - 1); // 1ms before start
+
+    const prevPurchaseWhere: any = { date: { lte: prevDayEnd } };
+    const prevPaymentWhere:  any = { date: { lte: prevDayEnd }, status: 'verified' };
+
+    if (isSP) { prevPurchaseWhere.createdBy = userId; prevPaymentWhere.createdBy = userId; }
+    if (partyType === 'trader')  {
+      prevPurchaseWhere.traderId  = partyId;
+      prevPaymentWhere.paymentFor = 'trader';
+      prevPaymentWhere.traderId   = partyId;
+    } else {
+      prevPurchaseWhere.companyId = partyId;
+      prevPaymentWhere.paymentFor = 'company';
+      prevPaymentWhere.companyId  = partyId;
+    }
+
+    const [prevPurchases, prevPayments] = await Promise.all([
+      prisma.purchase.aggregate({ where: prevPurchaseWhere, _sum: {
+        saleTotalAmount:     true,
+        purchaseTotalAmount: true,
+      }}),
+      prisma.payment.aggregate({ where: prevPaymentWhere, _sum: { amount: true } }),
+    ]);
+
+    const prevInvoice  = partyType === 'trader'
+      ? (prevPurchases._sum.saleTotalAmount     || 0)
+      : (prevPurchases._sum.purchaseTotalAmount || 0);
+    const prevPayment  = prevPayments._sum.amount || 0;
+    const openingBal   = +(prevInvoice - prevPayment).toFixed(2);
+
+    openingBalanceRow = {
+      rowType:        'opening',
+      date:           prevDayEnd.toISOString(),
+      description:    `Opening Balance (as of ${prevDayEnd.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})`,
+      closingBalance: openingBal,
+      balanceDelta:   0,
+      vehicleNumber:  '',
+      numberOfBirds:  null,
+      totalWeight:    null,
+      avgWeight:      null,
+      rate:           null,
+      totalAmount:    null,
+      creditDebitAmt: null,
+      paymentMethod:  '',
+      transactionId:  '',
+    };
+  }
+
+  // ── 2. Fetch purchases ───────────────────────────────────────────────────
+  const purchaseWhere: any = {};
+  if (dateWhere) purchaseWhere.date = dateWhere;
   if (isSP) purchaseWhere.createdBy = userId;
   if (partyType === 'trader')  purchaseWhere.traderId  = partyId;
   if (partyType === 'company') purchaseWhere.companyId = partyId;
@@ -67,7 +132,7 @@ export async function GET(req: NextRequest) {
     include: { creator: { select: { name: true } } },
   });
 
-  // ── 2. Fetch verified payments ────────────────────────────────────────────
+  // ── 3. Fetch verified payments ───────────────────────────────────────────
   const paymentWhere: any = { status: 'verified' };
   if (dateWhere) paymentWhere.date = dateWhere;
   if (isSP) paymentWhere.createdBy = userId;
@@ -79,28 +144,23 @@ export async function GET(req: NextRequest) {
     orderBy: [{ date: 'asc' }, { verifiedAt: 'asc' }],
   });
 
-  // ── 3. Build ledger entries ───────────────────────────────────────────────
+  // ── 4. Build ledger rows ─────────────────────────────────────────────────
   type LedgerRow = {
-    rowType:       'txn' | 'payment';
-    date:          string;         // ISO
-    sortKey:       number;         // timestamp for stable sort
-
-    // Transaction fields (txn rows only)
+    rowType:       'txn' | 'payment' | 'opening';
+    date:          string;
+    sortKey:       number;
+    description?:  string;
     vehicleNumber:   string;
     numberOfBirds:   number | null;
     totalWeight:     number | null;
     avgWeight:       number | null;
-    rate:            number | null; // saleRatePerKg for trader, purchaseRatePerKg for company
-    totalAmount:     number | null; // saleTotalAmount for trader, purchaseTotalAmount for company
-
-    // Payment fields (payment rows only)
-    creditDebitAmt:  number | null; // credit for trader, debit for company
+    rate:            number | null;
+    totalAmount:     number | null;
+    creditDebitAmt:  number | null;
     paymentMethod:   string;
     transactionId:   string;
-
-    // Running balance
-    balanceDelta:    number;        // + increases outstanding, - decreases it
-    closingBalance:  number;        // calculated below
+    balanceDelta:    number;
+    closingBalance:  number;
   };
 
   const rows: LedgerRow[] = [];
@@ -126,8 +186,8 @@ export async function GET(req: NextRequest) {
       creditDebitAmt: null,
       paymentMethod:  '',
       transactionId:  '',
-      balanceDelta: +amount.toFixed(2),  // purchase/sale increases outstanding
-      closingBalance: 0, // calculated below
+      balanceDelta: +amount.toFixed(2),
+      closingBalance: 0,
     });
   }
 
@@ -146,22 +206,22 @@ export async function GET(req: NextRequest) {
       creditDebitAmt: +(p.amount || 0).toFixed(2),
       paymentMethod:  (p as any).paymentMethod || '',
       transactionId:  txnId,
-      balanceDelta: -+(p.amount || 0).toFixed(2), // payment reduces outstanding
+      balanceDelta: -+(p.amount || 0).toFixed(2),
       closingBalance: 0,
     });
   }
 
-  // ── 4. Sort chronologically ───────────────────────────────────────────────
+  // ── 5. Sort + running balance ────────────────────────────────────────────
   rows.sort((a, b) => a.sortKey - b.sortKey);
 
-  // ── 5. Running closing balance ────────────────────────────────────────────
-  let balance = 0;
+  // Start running balance from opening balance if filter is applied
+  let balance = openingBalanceRow ? openingBalanceRow.closingBalance : 0;
   for (const row of rows) {
     balance += row.balanceDelta;
     row.closingBalance = +balance.toFixed(2);
   }
 
-  // ── 6. Party name ─────────────────────────────────────────────────────────
+  // ── 6. Party name ────────────────────────────────────────────────────────
   let partyName = '';
   if (partyType === 'trader') {
     const t = await prisma.trader.findUnique({ where: { id: partyId }, select: { name: true } });
@@ -171,7 +231,7 @@ export async function GET(req: NextRequest) {
     partyName = c?.name || '';
   }
 
-  // ── 7. Dropdown lists ─────────────────────────────────────────────────────
+  // ── 7. Dropdown lists ────────────────────────────────────────────────────
   const [traders, companies] = await Promise.all([
     isSP
       ? prisma.trader.findMany({ where: { isActive: true, purchases: { some: { createdBy: userId } } }, select: { id: true, name: true }, orderBy: { name: 'asc' } })
@@ -181,11 +241,15 @@ export async function GET(req: NextRequest) {
       : prisma.company.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
   ]);
 
+  // Prepend opening balance row to the final rows array
+  const allRows = openingBalanceRow ? [openingBalanceRow, ...rows] : rows;
+
   return NextResponse.json({
-    rows,
+    rows: allRows,
     partyName,
     partyType,
-    finalBalance: rows.length > 0 ? rows[rows.length - 1].closingBalance : 0,
+    finalBalance: rows.length > 0 ? rows[rows.length - 1].closingBalance : (openingBalanceRow?.closingBalance || 0),
+    openingBalance: openingBalanceRow,
     traders:   traders.map((t: any) => ({ _id: String(t.id), name: t.name })),
     companies: companies.map((c: any) => ({ _id: String(c.id), name: c.name })),
     role,

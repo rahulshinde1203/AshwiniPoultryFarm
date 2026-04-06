@@ -1,7 +1,7 @@
-import { notifyAllAdminsAndAccountants } from '@/lib/notifications';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { notifyAllAdminsAndAccountants } from '@/lib/notifications';
 
 const FIELD_LABELS: Record<string, string> = {
   date: 'Date', companyId: 'Company', traderId: 'Trader',
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const status = req.nextUrl.searchParams.get('status') as any;
 
   const where: any = {};
-  if (status) where.status = status;
+  if (status && status !== 'all') where.status = status;
   if (role === 'salesperson') where.requestedBy = userId;
 
   const requests = await prisma.editRequest.findMany({
@@ -60,34 +60,61 @@ export async function POST(req: NextRequest) {
   });
   if (!purchase) return NextResponse.json({ error: 'Record not found' }, { status: 404 });
 
+  // Enrich requestedData with company/trader names for display in review page
+  const enriched = { ...requestedData };
+  if (enriched.companyId) {
+    const c = await prisma.company.findUnique({ where: { id: parseInt(enriched.companyId) }, select: { name: true } });
+    enriched.companyName = c?.name || '';
+  }
+  if (enriched.traderId) {
+    const t = await prisma.trader.findUnique({ where: { id: parseInt(enriched.traderId) }, select: { name: true } });
+    enriched.traderName = t?.name || '';
+  }
+
+  // Detect changed fields — compare original vs requested
   const trackFields = ['date','companyId','traderId','numberOfBirds','totalWeight','purchaseRatePerKg','saleRatePerKg','vehicleNumber','notes'];
   const changedFields: string[] = [];
   for (const field of trackFields) {
-    const orig = field === 'date' ? new Date((purchase as any)[field]).toISOString().split('T')[0] : String((purchase as any)[field] ?? '');
-    const req2 = String(requestedData[field] ?? '');
+    const orig = field === 'date'
+      ? new Date((purchase as any)[field]).toISOString().split('T')[0]
+      : String((purchase as any)[field] ?? '');
+    const req2 = String(enriched[field] ?? '');
     if (orig !== req2) changedFields.push(FIELD_LABELS[field] || field);
   }
   if (changedFields.length === 0) return NextResponse.json({ error: 'No changes detected' }, { status: 400 });
 
   const originalSnapshot = {
-    date: new Date(purchase.date).toISOString().split('T')[0],
-    companyId: purchase.companyId, companyName: purchase.company?.name,
-    traderId: purchase.traderId, traderName: purchase.trader?.name,
-    numberOfBirds: purchase.numberOfBirds, totalWeight: purchase.totalWeight,
-    purchaseRatePerKg: purchase.purchaseRatePerKg, saleRatePerKg: purchase.saleRatePerKg,
-    vehicleNumber: purchase.vehicleNumber, notes: purchase.notes,
+    date:              new Date(purchase.date).toISOString().split('T')[0],
+    companyId:         purchase.companyId,
+    companyName:       purchase.company?.name,
+    traderId:          purchase.traderId,
+    traderName:        purchase.trader?.name,
+    numberOfBirds:     purchase.numberOfBirds,
+    totalWeight:       purchase.totalWeight,
+    purchaseRatePerKg: purchase.purchaseRatePerKg,
+    saleRatePerKg:     purchase.saleRatePerKg,
+    vehicleNumber:     purchase.vehicleNumber,
+    notes:             purchase.notes,
   };
 
   const editRequest = await prisma.editRequest.create({
-    data: { purchaseId, originalData: originalSnapshot, requestedData,
-            changedFields, reason: reason.trim(), requestedBy: parseInt((session!.user as any).id) },
+    data: {
+      purchaseId,
+      originalData:  originalSnapshot,
+      requestedData: enriched,
+      changedFields,
+      reason:        reason.trim(),
+      requestedBy:   parseInt((session!.user as any).id),
+    },
   });
+
   await notifyAllAdminsAndAccountants({
-    type: 'edit_pending',
+    type:  'edit_pending',
     title: '✏️ New Edit Request',
-    body: `${(session!.user as any).name} submitted a transaction edit request.`,
-    link: '/dashboard/accountant/edit-requests',
+    body:  `${(session!.user as any).name} submitted a transaction edit request.`,
+    link:  '/dashboard/accountant/edit-requests',
     excludeUserId: parseInt((session!.user as any).id),
   });
+
   return NextResponse.json({ editRequest: { ...editRequest, _id: String(editRequest.id) } }, { status: 201 });
 }

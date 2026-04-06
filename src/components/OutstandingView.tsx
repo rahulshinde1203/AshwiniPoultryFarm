@@ -105,7 +105,7 @@ export default function OutstandingView() {
       const rows  = list.map((p: any) => ({
         [label]: p.name,
         'Mobile': p.mobileNumber || '',
-        'Net Balance (₹)': p.outstandingNet,
+        'Net Balance (Rs.)': p.outstandingNet,
         'Status': p.status === 'advance' ? 'Advance/Credit' : p.status === 'settled' ? 'Settled' : 'Outstanding',
       }));
       const wb = utils.book_new();
@@ -134,8 +134,8 @@ export default function OutstandingView() {
         head: [['#', label, 'Mobile', 'Net Balance', 'Status']],
         body: list.map((p: any, i: number) => [
           i + 1, p.name, p.mobileNumber || '—',
-          p.outstandingNet < -0.01 ? `-₹${Math.abs(p.outstandingNet).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Adv)` :
-          p.outstandingNet > 0.01  ? `₹${p.outstandingNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '₹0.00',
+          p.outstandingNet < -0.01 ? `-Rs.${Math.abs(p.outstandingNet).toLocaleString('en-IN', { minimumFractionDigits: 2 })} (Adv)` :
+          p.outstandingNet > 0.01  ? `Rs.${p.outstandingNet.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : 'Rs.0.00',
           p.status === 'advance' ? 'Advance/Credit' : p.status === 'settled' ? 'Settled' : 'Outstanding',
         ]),
         styles: { fontSize: 9 },

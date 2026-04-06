@@ -63,7 +63,8 @@ export default function AdminPaymentsPage() {
     });
   },[payments,dateFilter,selMonth,selYear,customStart,customEnd,filterStatus,filterType,filterTrader,filterCompany,filterBy,filterBank]);
 
-  const fmt = (n:number) => `₹${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+  const fmt    = (n:number) => `₹${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
+  const pdfFmt = (n:number) => `Rs.${n.toLocaleString('en-IN',{minimumFractionDigits:2})}`;
   const totalAmt    = filtered.reduce((s,p)=>s+(p.amount||0),0);
   const pendingAmt  = filtered.filter(p=>p.status==='pending').reduce((s,p)=>s+(p.amount||0),0);
   const verifiedAmt = filtered.filter(p=>p.status==='verified').reduce((s,p)=>s+(p.amount||0),0);
@@ -90,7 +91,7 @@ export default function AdminPaymentsPage() {
         'Date':          new Date(p.date).toLocaleDateString('en-IN'),
         'Type':          p.paymentFor,
         'Party':         p.company?.name||p.trader?.name||'',
-        'Amount (₹)':    p.amount,
+        'Amount (Rs.)':    p.amount,
         'Method':        p.paymentMethod||'',
         'Txn ID':        getTxnId(p)||'',
         'Bank':          p.bankAccount?.bankName||'',
@@ -126,7 +127,7 @@ export default function AdminPaymentsPage() {
         head:[['Date','Type','Party','Amount','Method','Txn ID','Bank','Requested By','Status']],
         body: filtered.map(p=>[
           new Date(p.date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}),
-          p.paymentFor, p.company?.name||p.trader?.name||'', fmt(p.amount||0),
+          p.paymentFor, p.company?.name||p.trader?.name||'', pdfFmt(p.amount||0),
           p.paymentMethod||'—', getTxnId(p)||'—', p.bankAccount?.bankName||'—',
           p.createdBy?.name||'', p.status,
         ]),

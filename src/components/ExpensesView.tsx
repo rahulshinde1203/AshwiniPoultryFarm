@@ -14,7 +14,8 @@ const emptyForm = {
 };
 const inp = 'w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white';
 const lbl = 'block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5';
-const fmt = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const fmt    = (n: number) => `₹${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const pdfFmt = (n: number) => `Rs.${(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
 export default function ExpensesView({ readOnly = false }: { readOnly?: boolean }) {
   const [expenses,     setExpenses]     = useState<any[]>([]);
@@ -116,12 +117,12 @@ export default function ExpensesView({ readOnly = false }: { readOnly?: boolean 
       const { utils, writeFile } = await import('xlsx');
       const rows = filtered.map(e => ({
         'Date': new Date(e.date).toLocaleDateString('en-IN'),
-        'Type': e.expenseType, 'Amount (₹)': e.amount,
+        'Type': e.expenseType, 'Amount (Rs.)': e.amount,
         'Method': e.paymentMethod || '', 'Transaction ID': e.transactionId || '',
         'Bank': e.bankAccount?.bankName || '', 'Notes': e.notes || '',
         'Added By': e.createdBy?.name || '',
       }));
-      rows.push({ 'Date': 'TOTAL', 'Type': '', 'Amount (₹)': totalExpenses, 'Method': '', 'Transaction ID': '', 'Bank': '', 'Notes': '', 'Added By': '' });
+      rows.push({ 'Date': 'TOTAL', 'Type': '', 'Amount (Rs.)': totalExpenses, 'Method': '', 'Transaction ID': '', 'Bank': '', 'Notes': '', 'Added By': '' });
       const wb = utils.book_new();
       utils.book_append_sheet(wb, utils.json_to_sheet(rows), 'Expenses');
       writeFile(wb, `expenses-${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -139,17 +140,17 @@ export default function ExpensesView({ readOnly = false }: { readOnly?: boolean 
       const doc = new jsPDF();
       doc.setFontSize(16); doc.text('Ashwini Poultry Farm', 14, 15);
       doc.setFontSize(11); doc.text('Expenses Report', 14, 23);
-      doc.setFontSize(8); doc.text(`Period: ${periodLabel}  |  Total: ${fmt(totalExpenses)}  |  Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 30);
+      doc.setFontSize(8); doc.text(`Period: ${periodLabel}  |  Total: Rs.${totalExpenses.toLocaleString('en-IN', {minimumFractionDigits:2})}  |  Generated: ${new Date().toLocaleDateString('en-IN')}`, 14, 30);
       autoTable(doc, {
         startY: 36,
         head: [['Date','Type','Amount','Method','Txn ID','Bank','Notes']],
         body: [
           ...filtered.map(e => [
             new Date(e.date).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }),
-            e.expenseType, fmt(e.amount || 0), e.paymentMethod || '',
+            e.expenseType, pdfFmt(e.amount || 0), e.paymentMethod || '',
             e.transactionId || '', e.bankAccount?.bankName || '', e.notes || '',
           ]),
-          ['TOTAL','', fmt(totalExpenses),'','','',''],
+          ['TOTAL','', pdfFmt(totalExpenses),'','','',''],
         ],
         styles: { fontSize: 8 },
         headStyles: { fillColor: [249, 115, 22] },

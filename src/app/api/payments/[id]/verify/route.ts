@@ -1,7 +1,8 @@
-import { notifyUser, notifyAllAdminsAndAccountants } from '@/lib/notifications';
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { syncBankStatement } from '@/lib/bank-statement-sync';
+import { notifyUser } from '@/lib/notifications';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { error, session } = await requireAuth(['accountant', 'admin']);
@@ -35,88 +36,98 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       },
     });
 
-    // ── TRADER PAYMENT ────────────────────────────────────────────────────
+    // ── TRADER PAYMENT — update outstanding ──────────────────────────────
     if (payment.paymentFor === 'trader' && payment.traderId) {
       let remaining = payment.amount;
-
-      // Get all purchases for this salesperson + trader, oldest first
       const allPurchases = await prisma.purchase.findMany({
         where: { traderId: payment.traderId, createdBy: payment.createdBy },
         orderBy: { date: 'asc' },
         select: { id: true, outstandingAmount: true },
       });
-
       for (const purchase of allPurchases) {
         if (remaining <= 0) break;
-        // Deduct as much as possible — can go below 0 (credit/advance balance)
         const deduct = Math.min(remaining, purchase.outstandingAmount > 0 ? purchase.outstandingAmount : 0);
         if (deduct > 0) {
-          await prisma.purchase.update({
-            where: { id: purchase.id },
-            data: { outstandingAmount: { decrement: deduct } },
-          });
+          await prisma.purchase.update({ where: { id: purchase.id }, data: { outstandingAmount: { decrement: deduct } } });
           remaining -= deduct;
         }
       }
-
-      // If remaining > 0 after all purchases exhausted → overpayment/advance
-      // Apply excess to the most recent purchase making outstandingAmount negative
       if (remaining > 0 && allPurchases.length > 0) {
         const latestPurchase = allPurchases[allPurchases.length - 1];
-        await prisma.purchase.update({
-          where: { id: latestPurchase.id },
-          data: { outstandingAmount: { decrement: remaining } },
-        });
+        await prisma.purchase.update({ where: { id: latestPurchase.id }, data: { outstandingAmount: { decrement: remaining } } });
       }
-
-      await prisma.trader.update({
-        where: { id: payment.traderId },
-        data: { outstandingBalance: { decrement: payment.amount } },
-      });
+      await prisma.trader.update({ where: { id: payment.traderId }, data: { outstandingBalance: { decrement: payment.amount } } });
     }
 
-    // ── COMPANY PAYMENT ───────────────────────────────────────────────────
-    // Company outstanding is tracked separately (not via outstandingAmount)
-    // so we only update the company's outstandingBalance here
+    // ── COMPANY PAYMENT — update outstanding ─────────────────────────────
     if (payment.paymentFor === 'company' && payment.companyId) {
-      await prisma.company.update({
-        where: { id: payment.companyId },
-        data: { outstandingBalance: { decrement: payment.amount } },
-      });
+      await prisma.company.update({ where: { id: payment.companyId }, data: { outstandingBalance: { decrement: payment.amount } } });
     }
 
-    // Notify the salesperson who created the payment
-    if (payment.createdBy) {
-      await notifyUser({
-        userId: payment.createdBy,
-        type: 'payment_verified',
-        title: '✅ Payment Verified',
-        body: `Your ₹${payment.amount.toLocaleString('en-IN')} payment has been verified.`,
-        link: '/dashboard/salesperson/payments',
-      });
+    // ── AUTO SYNC BANK STATEMENT ─────────────────────────────────────────
+    // Use the final bankAccountId (updated for company, original for trader)
+    const finalPayment = await prisma.payment.findUnique({ where: { id: payment.id } });
+    if (finalPayment?.bankAccountId) {
+      try {
+        const txnId = finalPayment.utrNumber || finalPayment.chequeNumber || finalPayment.transactionId || '';
+        if (finalPayment.paymentFor === 'trader') {
+          const trader = await prisma.trader.findUnique({ where: { id: finalPayment.traderId! }, select: { name: true } });
+          await syncBankStatement({
+            bankAccountId: finalPayment.bankAccountId,
+            date: finalPayment.date,
+            credit: finalPayment.amount, debit: 0,
+            description: 'Payment received from trader',
+            remark: `Received from: ${trader?.name || 'Trader'}`,
+            transactionId: txnId,
+            sourceType: 'payment_trader',
+            sourceId: finalPayment.id,
+            createdBy: userId,
+          });
+        } else if (finalPayment.paymentFor === 'company') {
+          const company = await prisma.company.findUnique({ where: { id: finalPayment.companyId! }, select: { name: true } });
+          await syncBankStatement({
+            bankAccountId: finalPayment.bankAccountId,
+            date: finalPayment.date,
+            credit: 0, debit: finalPayment.amount,
+            description: 'Payment made to company',
+            remark: `Paid to: ${company?.name || 'Company'}`,
+            transactionId: txnId,
+            sourceType: 'payment_company',
+            sourceId: finalPayment.id,
+            createdBy: userId,
+          });
+        }
+      } catch (syncErr) {
+        // Don't fail the verification if sync fails
+        console.error('Bank statement sync error:', syncErr);
+      }
     }
+
+    // Notify the payment creator
+    await notifyUser({
+      userId: payment.createdBy,
+      type: 'payment_verified',
+      title: '✅ Payment Verified',
+      body: `Your payment of ₹${payment.amount.toLocaleString('en-IN')} has been verified.`,
+      link: '/dashboard/salesperson/payments',
+    });
+
     return NextResponse.json({ payment: { ...updated, _id: String(updated.id) } });
 
   } else if (action === 'reject') {
     const updated = await prisma.payment.update({
       where: { id: payment.id },
-      data: {
-        status: 'rejected',
-        rejectionReason: rejectionReason || '',
-        verifiedById: userId,
-        verifiedAt: new Date(),
-      },
+      data: { status: 'rejected', rejectionReason: rejectionReason || '', verifiedById: userId, verifiedAt: new Date() },
     });
-    // Notify the salesperson
-    if (payment.createdBy) {
-      await notifyUser({
-        userId: payment.createdBy,
-        type: 'payment_rejected',
-        title: '❌ Payment Rejected',
-        body: `Your ₹${payment.amount.toLocaleString('en-IN')} payment was rejected. ${rejectionReason || ''}`.trim(),
-        link: '/dashboard/salesperson/payments',
-      });
-    }
+
+    await notifyUser({
+      userId: payment.createdBy,
+      type: 'payment_rejected',
+      title: '❌ Payment Rejected',
+      body: `Your payment request was rejected. ${rejectionReason || ''}`.trim(),
+      link: '/dashboard/salesperson/payments',
+    });
+
     return NextResponse.json({ payment: { ...updated, _id: String(updated.id) } });
   }
 
