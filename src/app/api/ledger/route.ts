@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
   const dateWhere = buildDate(sp);
   const startDate = getStartDate(sp);
 
+  try {
   if (!partyId) {
     const [traders, companies] = await Promise.all([
       isSP
@@ -66,18 +67,16 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // ── 1. Opening Balance (previous day closing) ────────────────────────────
+  // ── 1. Opening Balance ───────────────────────────────────────────────────
+  // Use `lt: startDate` (strictly before period start) — no 1ms edge case.
   let openingBalanceRow: any = null;
 
   if (startDate) {
-    // Last moment before filter starts
-    const prevDayEnd = new Date(startDate.getTime() - 1); // 1ms before start
-
-    const prevPurchaseWhere: any = { date: { lte: prevDayEnd } };
-    const prevPaymentWhere:  any = { date: { lte: prevDayEnd }, status: 'verified' };
+    const prevPurchaseWhere: any = { date: { lt: startDate } };
+    const prevPaymentWhere:  any = { date: { lt: startDate }, status: 'verified' };
 
     if (isSP) { prevPurchaseWhere.createdBy = userId; prevPaymentWhere.createdBy = userId; }
-    if (partyType === 'trader')  {
+    if (partyType === 'trader') {
       prevPurchaseWhere.traderId  = partyId;
       prevPaymentWhere.paymentFor = 'trader';
       prevPaymentWhere.traderId   = partyId;
@@ -88,23 +87,22 @@ export async function GET(req: NextRequest) {
     }
 
     const [prevPurchases, prevPayments] = await Promise.all([
-      prisma.purchase.aggregate({ where: prevPurchaseWhere, _sum: {
-        saleTotalAmount:     true,
-        purchaseTotalAmount: true,
-      }}),
+      prisma.purchase.aggregate({ where: prevPurchaseWhere, _sum: { saleTotalAmount: true, purchaseTotalAmount: true } }),
       prisma.payment.aggregate({ where: prevPaymentWhere, _sum: { amount: true } }),
     ]);
 
-    const prevInvoice  = partyType === 'trader'
-      ? (prevPurchases._sum.saleTotalAmount     || 0)
-      : (prevPurchases._sum.purchaseTotalAmount || 0);
-    const prevPayment  = prevPayments._sum.amount || 0;
-    const openingBal   = +(prevInvoice - prevPayment).toFixed(2);
+    const prevInvoice = partyType === 'trader'
+      ? (prevPurchases._sum.saleTotalAmount     ?? 0)
+      : (prevPurchases._sum.purchaseTotalAmount ?? 0);
+    const prevPaid    = prevPayments._sum.amount ?? 0;
+    const openingBal  = +(prevInvoice - prevPaid).toFixed(2);
 
+    // Label: "before April 2026" / "before 07 Apr 2026" etc.
+    const beforeLabel = startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
     openingBalanceRow = {
       rowType:        'opening',
-      date:           prevDayEnd.toISOString(),
-      description:    `Opening Balance (as of ${prevDayEnd.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})`,
+      date:           new Date(startDate.getTime() - 1).toISOString(), // 1 ms before period — for display only
+      description:    `Opening Balance (before ${beforeLabel})`,
       closingBalance: openingBal,
       balanceDelta:   0,
       vehicleNumber:  '',
@@ -248,10 +246,15 @@ export async function GET(req: NextRequest) {
     rows: allRows,
     partyName,
     partyType,
-    finalBalance: rows.length > 0 ? rows[rows.length - 1].closingBalance : (openingBalanceRow?.closingBalance || 0),
+    finalBalance: rows.length > 0 ? rows[rows.length - 1].closingBalance : (openingBalanceRow?.closingBalance ?? 0),
     openingBalance: openingBalanceRow,
     traders:   traders.map((t: any) => ({ _id: String(t.id), name: t.name })),
     companies: companies.map((c: any) => ({ _id: String(c.id), name: c.name })),
     role,
   });
+
+  } catch (err: any) {
+    console.error('GET /api/ledger:', err.message);
+    return NextResponse.json({ error: err.message || 'Failed to load ledger' }, { status: 500 });
+  }
 }

@@ -64,15 +64,16 @@ export default function LedgerView() {
     if (!partyId) { toast.error('Please select a party'); return; }
     if (period === 'range' && (!rangeStart || !rangeEnd)) { toast.error('Select both start and end dates'); return; }
     setLoading(true);
-    const res = await fetch(`/api/ledger?${buildQS()}`);
-    const d = await res.json();
-    setLoading(false);
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/ledger?${buildQS()}`);
+      const d   = await res.json();
+      if (!res.ok) { toast.error(d.error || 'Failed to generate report'); return; }
       setRows(d.rows || []);
       setPartyName(d.partyName || '');
-      setFinalBal(d.finalBalance || 0);
+      setFinalBal(d.finalBalance ?? 0);
       setGenerated(true);
-    } else toast.error(d.error || 'Failed to generate report');
+    } catch { toast.error('Network error — could not load ledger'); }
+    finally  { setLoading(false); }
   };
 
   const reset = () => {

@@ -1,6 +1,8 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+
+const AUTO_REFRESH_MS = 30_000; // 30 seconds
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const YEARS  = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
@@ -8,10 +10,10 @@ const fmt    = (n: number) => `₹${(n||0).toLocaleString('en-IN', { minimumFrac
 
 const SOURCE_LABEL: Record<string,{label:string;color:string}> = {
   manual:           { label: 'Manual',          color: 'bg-gray-100 text-gray-600' },
+  opening_balance:  { label: 'Opening Balance', color: 'bg-blue-100 text-blue-700' },
   payment_trader:   { label: 'Trader Payment',  color: 'bg-green-100 text-green-700' },
   payment_company:  { label: 'Company Payment', color: 'bg-red-100 text-red-700' },
   expense:          { label: 'Expense',         color: 'bg-purple-100 text-purple-700' },
-
 };
 
 export default function AdminBankStatementsPage() {
@@ -20,6 +22,8 @@ export default function AdminBankStatementsPage() {
   const [selAccount,   setSelAccount]   = useState('');
   const [selMonth,     setSelMonth]     = useState(new Date().getMonth() + 1);
   const [selYear,      setSelYear]      = useState(new Date().getFullYear());
+  const [lastUpdated,  setLastUpdated]  = useState<Date | null>(null);
+  const [refreshing,   setRefreshing]   = useState(false);
 
   type PeriodType = 'all'|'day'|'month'|'range';
   const [period,     setPeriod]     = useState<PeriodType>('month');
@@ -29,21 +33,46 @@ export default function AdminBankStatementsPage() {
   const todayStr = new Date().toISOString().split('T')[0];
   const PERIOD_LABELS: Record<PeriodType,string> = { all:'All Time', day:'Select Date', month:'Select Month', range:'Date Range' };
 
-  const buildParams = () => {
-    const p = new URLSearchParams({ period });
-    if (selAccount) p.set('bankAccount', selAccount);
-    if (period==='day')   p.set('date', selDate);
-    if (period==='month') { p.set('month', String(selMonth)); p.set('year', String(selYear)); }
-    if (period==='range') { p.set('start', rangeStart); p.set('end', rangeEnd); }
+  // Keep latest filter values accessible inside the interval without re-creating it
+  const filterRef = useRef({ period, selAccount, selDate, selMonth, selYear, rangeStart, rangeEnd });
+  useEffect(() => { filterRef.current = { period, selAccount, selDate, selMonth, selYear, rangeStart, rangeEnd }; });
+
+  const buildParams = (f = filterRef.current) => {
+    const p = new URLSearchParams({ period: f.period });
+    if (f.selAccount) p.set('bankAccount', f.selAccount);
+    if (f.period==='day')   p.set('date', f.selDate);
+    if (f.period==='month') { p.set('month', String(f.selMonth)); p.set('year', String(f.selYear)); }
+    if (f.period==='range') { p.set('start', f.rangeStart); p.set('end', f.rangeEnd); }
     return p.toString();
   };
 
-  const load = () => {
-    if (period==='range' && (!rangeStart||!rangeEnd)) return;
-    fetch(`/api/bank-statements?${buildParams()}`).then(r=>r.json()).then(d=>setStatements(d.statements||[]));
-    fetch('/api/bank-accounts').then(r=>r.json()).then(d=>{ const accs = d.accounts||[]; setAccounts(accs); if(accs.length && !selAccount) setSelAccount(accs[0]._id); });
+  const loadStatements = (silent = false) => {
+    const f = filterRef.current;
+    if (f.period==='range' && (!f.rangeStart || !f.rangeEnd)) return;
+    if (!silent) setRefreshing(true);
+    fetch(`/api/bank-statements?${buildParams(f)}`)
+      .then(r => r.json())
+      .then(d => { setStatements(d.statements || []); setLastUpdated(new Date()); })
+      .finally(() => { if (!silent) setRefreshing(false); });
   };
-  useEffect(()=>{ load(); },[period, selDate, selMonth, selYear, rangeStart, rangeEnd, selAccount]);
+
+  // Reload when filters change
+  useEffect(() => { loadStatements(); }, [period, selDate, selMonth, selYear, rangeStart, rangeEnd, selAccount]);
+
+  // Fetch accounts once on mount
+  useEffect(() => {
+    fetch('/api/bank-accounts').then(r => r.json()).then(d => {
+      const accs = d.accounts || [];
+      setAccounts(accs);
+      if (accs.length) setSelAccount(accs[0]._id);
+    });
+  }, []);
+
+  // Auto-refresh every 30 s (silent — no spinner)
+  useEffect(() => {
+    const id = setInterval(() => loadStatements(true), AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
 
   // Statements from API are asc (oldest first) so balance column is correct.
   // Reverse for display so newest appears at top.
@@ -74,11 +103,27 @@ export default function AdminBankStatementsPage() {
       <div className="bg-gradient-to-r from-slate-700 to-gray-800 px-5 sm:px-8 py-6">
         <div className="max-w-6xl mx-auto flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-white font-extrabold text-xl sm:text-2xl">Bank Statements</h1>
-          <p className="text-slate-300 text-sm mt-0.5">{period==='month'?`${MONTHS[selMonth-1]} ${selYear}`:period==='day'?selDate:period==='range'&&rangeStart?`${rangeStart} – ${rangeEnd}`:'All Time'} · {filtered.length} entries · <span className="text-gray-400">Read-only</span></p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-white font-extrabold text-xl sm:text-2xl">Bank Statements</h1>
+            <span className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 border border-green-400/30 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
+              <span className="text-green-300 text-xs font-semibold">Live</span>
+            </span>
+          </div>
+          <p className="text-slate-300 text-sm mt-0.5">
+            {period==='month'?`${MONTHS[selMonth-1]} ${selYear}`:period==='day'?selDate:period==='range'&&rangeStart?`${rangeStart} – ${rangeEnd}`:'All Time'}
+            {' · '}{filtered.length} entries
+            {lastUpdated && <span className="text-slate-400"> · Updated {lastUpdated.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>}
+          </p>
         </div>
-        <button onClick={exportExcel} disabled={!filtered.length}
-          className="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 disabled:opacity-40">📥 Excel</button>
+        <div className="flex gap-2">
+          <button onClick={() => loadStatements()} disabled={refreshing}
+            className="px-3 py-2 bg-white/10 text-white rounded-xl text-xs font-semibold hover:bg-white/20 disabled:opacity-40 transition">
+            {refreshing ? '⟳ Refreshing…' : '⟳ Refresh'}
+          </button>
+          <button onClick={exportExcel} disabled={!filtered.length}
+            className="px-3 py-2 bg-green-600 text-white rounded-xl text-xs font-semibold hover:bg-green-700 disabled:opacity-40">📥 Excel</button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4 space-y-4">

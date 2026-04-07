@@ -26,13 +26,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       data: {
         status: 'verified', verifiedById: userId, verifiedAt: new Date(),
         ...(notes && { notes }),
-        ...(payment.paymentFor === 'company' && {
-          transactionId: transactionId || '',
-          paymentMethod: paymentMethod as any,
-          bankAccountId: bankAccount ? parseInt(bankAccount) : null,
-          chequeNumber: chequeNumber || '',
-          utrNumber: utrNumber || '',
-        }),
+        // For both trader and company payments: persist all provided verification fields
+        ...(transactionId  && { transactionId }),
+        ...(paymentMethod  && { paymentMethod: paymentMethod as any }),
+        ...(bankAccount    && { bankAccountId: parseInt(bankAccount) }),
+        ...(chequeNumber   && { chequeNumber }),
+        ...(utrNumber      && { utrNumber }),
       },
     });
 
