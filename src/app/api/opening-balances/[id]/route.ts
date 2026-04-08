@@ -13,7 +13,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
   try {
     const id   = parseInt(params.id);
     const body = await req.json();
-    const { amount, notes } = body;
+    const { amount, notes, date } = body;
 
     if (amount === undefined || amount === null || isNaN(parseFloat(amount))) {
       return NextResponse.json({ error: 'amount is required and must be a number' }, { status: 400 });
@@ -24,7 +24,11 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
     const updated = await db.salespersonOpeningBalance.update({
       where: { id },
-      data: { amount: parseFloat(amount), notes: notes ?? existing.notes },
+      data: {
+        amount: parseFloat(amount),
+        date:   date !== undefined ? (date ? new Date(date) : null) : existing.date,
+        notes:  notes ?? existing.notes,
+      },
     });
 
     return NextResponse.json({ openingBalance: updated });

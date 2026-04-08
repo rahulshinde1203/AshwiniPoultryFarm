@@ -95,11 +95,12 @@ model Trader {
   panNumber          String?
   panCardPhoto       String?   @db.LongText
   address            String?
-  outstandingBalance Float     @default(0)
-  isActive           Boolean   @default(true)
-  createdBy          Int
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  outstandingBalance    Float     @default(0)
+  openingBalanceDate    DateTime?
+  isActive              Boolean   @default(true)
+  createdBy             Int
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   creator   User       @relation(fields: [createdBy], references: [id])
   purchases Purchase[]
@@ -122,6 +123,7 @@ model Company {
   upiId              String?
   upiQrCode          String?                @db.LongText
   outstandingBalance Float                  @default(0)
+  openingBalanceDate DateTime?
   isActive           Boolean                @default(true)
   createdBy          Int
   createdAt          DateTime               @default(now())
@@ -143,6 +145,7 @@ model SalespersonOpeningBalance {
   partyType     PaymentFor                // trader | company
   partyId       Int
   amount        Float      @default(0)   // positive = party owes SP; negative = SP owes party
+  date          DateTime?              // date from which this opening balance applies
   notes         String     @default("")
   createdBy     Int
   createdAt     DateTime   @default(now())
@@ -183,7 +186,9 @@ model BankAccount {
   branchName        String
   upiId             String?
   upiQrCode         String?   @db.LongText
-  currentBalance    Float     @default(0)
+  openingBalance    Float     @default(0)   // immutable — set once at creation, never updated
+  openingBalanceDate DateTime?              // date from which openingBalance applies; null = no opening balance
+  currentBalance    Float     @default(0)   // live/display balance — NOT used in ledger calculations
   isActive          Boolean   @default(true)
   createdBy         Int
   createdAt         DateTime  @default(now())

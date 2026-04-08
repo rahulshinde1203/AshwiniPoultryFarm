@@ -12,6 +12,7 @@ type OpeningBalance = {
   partyId: number;
   partyName: string;
   amount: number;
+  date: string | null;
   notes: string;
   updatedAt: string;
 };
@@ -35,6 +36,7 @@ export default function OpeningBalancesPage() {
   const [formPartyType,setFormPartyType] = useState<'trader' | 'company'>('trader');
   const [formPartyId,  setFormPartyId]   = useState('');
   const [formAmount,   setFormAmount]    = useState('');
+  const [formDate,     setFormDate]      = useState('');
   const [formNotes,    setFormNotes]     = useState('');
   const [saving,       setSaving]        = useState(false);
   const [formErr,      setFormErr]       = useState('');
@@ -84,6 +86,7 @@ export default function OpeningBalancesPage() {
     setFormPartyType('trader');
     setFormPartyId('');
     setFormAmount('');
+    setFormDate('');
     setFormNotes('');
     setFormErr('');
     setShowForm(true);
@@ -95,6 +98,7 @@ export default function OpeningBalancesPage() {
     setFormPartyType(r.partyType);
     setFormPartyId(String(r.partyId));
     setFormAmount(String(r.amount));
+    setFormDate(r.date || '');
     setFormNotes(r.notes);
     setFormErr('');
     setShowForm(true);
@@ -115,7 +119,7 @@ export default function OpeningBalancesPage() {
         res = await fetch(`/api/opening-balances/${editId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ amount: amt, notes: formNotes }),
+          body: JSON.stringify({ amount: amt, date: formDate || null, notes: formNotes }),
         });
       } else {
         res = await fetch('/api/opening-balances', {
@@ -126,6 +130,7 @@ export default function OpeningBalancesPage() {
             partyType:     formPartyType,
             partyId:       parseInt(formPartyId),
             amount:        amt,
+            date:          formDate || null,
             notes:         formNotes,
           }),
         });
@@ -249,6 +254,20 @@ export default function OpeningBalancesPage() {
               />
             </div>
 
+            {/* Date */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Opening Balance Date <span className="text-gray-400 font-normal">— date this balance applies from</span>
+              </label>
+              <input
+                type="date"
+                value={formDate}
+                onChange={e => setFormDate(e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+              />
+            </div>
+
             {/* Notes */}
             <div className="sm:col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
@@ -317,6 +336,7 @@ export default function OpeningBalancesPage() {
                 <th className="text-left px-4 py-2 text-gray-600 font-medium">Party Type</th>
                 <th className="text-left px-4 py-2 text-gray-600 font-medium">Party Name</th>
                 <th className="text-right px-4 py-2 text-gray-600 font-medium">Amount</th>
+                <th className="text-left px-4 py-2 text-gray-600 font-medium">Date</th>
                 <th className="text-left px-4 py-2 text-gray-600 font-medium">Notes</th>
                 <th className="text-right px-4 py-2 text-gray-600 font-medium">Actions</th>
               </tr>
@@ -345,6 +365,9 @@ export default function OpeningBalancesPage() {
                         {r.amount > 0 ? 'DR (party owes SP)' : 'CR (SP owes party)'}
                       </div>
                     )}
+                  </td>
+                  <td className="px-4 py-2 text-gray-500 text-sm whitespace-nowrap">
+                    {r.date ? new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                   </td>
                   <td className="px-4 py-2 text-gray-500 text-xs max-w-xs truncate">{r.notes || '—'}</td>
                   <td className="px-4 py-2 text-right">

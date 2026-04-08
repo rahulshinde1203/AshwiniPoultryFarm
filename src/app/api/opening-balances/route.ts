@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       partyId:         r.partyId,
       partyName:       r.partyType === 'trader' ? (traderNameMap[r.partyId] || '') : (companyNameMap[r.partyId] || ''),
       amount:          r.amount,
+      date:            r.date ? r.date.toISOString().split('T')[0] : null,
       notes:           r.notes,
       createdAt:       r.createdAt.toISOString(),
       updatedAt:       r.updatedAt.toISOString(),
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
   try {
     const userId = parseInt((session!.user as any).id);
     const body   = await req.json();
-    const { salespersonId, partyType, partyId, amount, notes } = body;
+    const { salespersonId, partyType, partyId, amount, notes, date } = body;
 
     if (!salespersonId || !partyType || !partyId || amount === undefined || amount === null) {
       return NextResponse.json({ error: 'salespersonId, partyType, partyId and amount are required' }, { status: 400 });
@@ -78,6 +79,8 @@ export async function POST(req: NextRequest) {
     if (isNaN(parseFloat(amount))) {
       return NextResponse.json({ error: 'amount must be a number' }, { status: 400 });
     }
+
+    const parsedDate = date ? new Date(date) : null;
 
     const record = await db.salespersonOpeningBalance.upsert({
       where: {
@@ -92,11 +95,13 @@ export async function POST(req: NextRequest) {
         partyType: partyType as any,
         partyId:   parseInt(partyId),
         amount:    parseFloat(amount),
+        date:      parsedDate,
         notes:     notes || '',
         createdBy: userId,
       },
       update: {
         amount: parseFloat(amount),
+        date:   parsedDate,
         notes:  notes ?? '',
       },
     });
