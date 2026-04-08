@@ -75,7 +75,8 @@ export async function GET(req: NextRequest) {
   let openingBalanceRow: any = null;
 
   // Fetch stored pre-system opening balance(s) for this party
-  let storedBal = 0;
+  let storedBal  = 0;
+  let storedDate: Date | null = null;
   if (partyId) {
     if (isSP) {
       // Salesperson: only their own opening balance for this party
@@ -87,16 +88,21 @@ export async function GET(req: NextRequest) {
             partyId:       partyId,
           },
         },
-        select: { amount: true },
+        select: { amount: true, date: true },
       });
-      storedBal = ob?.amount ?? 0;
+      storedBal  = ob?.amount ?? 0;
+      storedDate = ob?.date   ?? null;
     } else {
       // Admin / accountant: sum all salespersons' opening balances for this party
       const obs = await db.salespersonOpeningBalance.findMany({
         where: { partyType: partyType as any, partyId: partyId },
-        select: { amount: true },
+        select: { amount: true, date: true },
+        orderBy: { date: 'asc' },
       });
-      storedBal = obs.reduce((sum: number, ob: any) => sum + (ob.amount ?? 0), 0);
+      storedBal  = obs.reduce((sum: number, ob: any) => sum + (ob.amount ?? 0), 0);
+      // Use the earliest non-null date, or the first record's date
+      const withDate = obs.filter((ob: any) => ob.date);
+      storedDate = withDate.length > 0 ? withDate[0].date : null;
     }
   }
 
@@ -149,8 +155,10 @@ export async function GET(req: NextRequest) {
     // period = 'all' but there's a stored pre-system balance — show it as first row
     openingBalanceRow = {
       rowType:        'opening',
-      date:           new Date(0).toISOString(), // epoch — always sorts first
-      description:    'Opening Balance (pre-system)',
+      date:           storedDate ? storedDate.toISOString() : new Date(0).toISOString(),
+      description:    storedDate
+        ? `Opening Balance (${storedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })})`
+        : 'Opening Balance (pre-system)',
       closingBalance: storedBal,
       balanceDelta:   0,
       vehicleNumber:  '',
@@ -267,14 +275,17 @@ export async function GET(req: NextRequest) {
     row.closingBalance = +balance.toFixed(2);
   }
 
-  // ── 6. Party name ────────────────────────────────────────────────────────
+  // ── 6. Party name + opening balance date ─────────────────────────────────
   let partyName = '';
+  let partyOpeningBalanceDate: string | null = null;
   if (partyType === 'trader') {
-    const t = await prisma.trader.findUnique({ where: { id: partyId }, select: { name: true } });
+    const t = await prisma.trader.findUnique({ where: { id: partyId }, select: { name: true, openingBalanceDate: true } });
     partyName = t?.name || '';
+    partyOpeningBalanceDate = t?.openingBalanceDate ? t.openingBalanceDate.toISOString().split('T')[0] : null;
   } else {
-    const c = await prisma.company.findUnique({ where: { id: partyId }, select: { name: true } });
+    const c = await prisma.company.findUnique({ where: { id: partyId }, select: { name: true, openingBalanceDate: true } });
     partyName = c?.name || '';
+    partyOpeningBalanceDate = c?.openingBalanceDate ? c.openingBalanceDate.toISOString().split('T')[0] : null;
   }
 
   // ── 7. Dropdown lists ────────────────────────────────────────────────────
@@ -294,6 +305,7 @@ export async function GET(req: NextRequest) {
     rows: allRows,
     partyName,
     partyType,
+    partyOpeningBalanceDate,
     finalBalance: rows.length > 0 ? rows[rows.length - 1].closingBalance : (openingBalanceRow?.closingBalance ?? 0),
     openingBalance: openingBalanceRow,
     traders:   traders.map((t: any) => ({ _id: String(t.id), name: t.name })),

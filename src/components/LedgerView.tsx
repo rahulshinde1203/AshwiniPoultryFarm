@@ -33,6 +33,7 @@ export default function LedgerView() {
 
   const [rows,       setRows]       = useState<any[]>([]);
   const [partyName,  setPartyName]  = useState('');
+  const [partyObDate, setPartyObDate] = useState<string | null>(null);
   const [finalBal,   setFinalBal]   = useState(0);
   const [traders,    setTraders]    = useState<any[]>([]);
   const [companies,  setCompanies]  = useState<any[]>([]);
@@ -70,6 +71,7 @@ export default function LedgerView() {
       if (!res.ok) { toast.error(d.error || 'Failed to generate report'); return; }
       setRows(d.rows || []);
       setPartyName(d.partyName || '');
+      setPartyObDate(d.partyOpeningBalanceDate || null);
       setFinalBal(d.finalBalance ?? 0);
       setGenerated(true);
     } catch { toast.error('Network error — could not load ledger'); }
@@ -77,7 +79,7 @@ export default function LedgerView() {
   };
 
   const reset = () => {
-    setRows([]); setPartyId(''); setGenerated(false); setFinalBal(0); setPartyName('');
+    setRows([]); setPartyId(''); setGenerated(false); setFinalBal(0); setPartyName(''); setPartyObDate(null);
   };
 
   const periodLabel = period === 'all' ? 'All Time'
@@ -319,6 +321,11 @@ export default function LedgerView() {
                     {partyType === 'trader' ? '🤝 Trader' : '🏭 Company'} Ledger — <span className="text-orange-600">{partyName}</span>
                   </h2>
                   <p className="text-sm text-gray-500 mt-0.5">Period: {periodLabel}</p>
+                  {partyObDate && (
+                    <p className="text-xs text-blue-600 mt-0.5">
+                      Opening Balance Date: {fmtDate(partyObDate + 'T00:00:00')}
+                    </p>
+                  )}
                   <div className="flex gap-4 mt-2 text-xs text-gray-500">
                     <span>📋 {txnCount} transaction{txnCount !== 1 ? 's' : ''}</span>
                     <span>💳 {payCount} payment{payCount !== 1 ? 's' : ''}</span>
