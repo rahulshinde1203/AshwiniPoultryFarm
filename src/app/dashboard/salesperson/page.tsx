@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 
@@ -21,7 +22,7 @@ export default function SalespersonDashboard() {
   const [customStart,  setCustomStart]  = useState('');
   const [customEnd,    setCustomEnd]    = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     Promise.all([
       fetch('/api/purchases').then(r => r.ok ? r.json() : { purchases: [] }),
       fetch('/api/edit-requests?status=pending').then(r => r.ok ? r.json() : { requests: [] }),
@@ -38,8 +39,20 @@ export default function SalespersonDashboard() {
       setCompanyOut(outCompanies.reduce((s: number, c: any) => s + c.outstandingNet, 0));
       setLoading(false);
     }).catch(() => setLoading(false));
-  };
-  useEffect(()=>{ load(); const _id = setInterval(load, 30000); return () => clearInterval(_id); },[]);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['purchase', 'payment'], load);
 
   const filtered = purchases.filter(r => {
     const d = new Date(r.date); const now = new Date();

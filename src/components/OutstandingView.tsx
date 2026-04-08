@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import { toast } from 'sonner';
 
 type Tab        = 'trader' | 'company';
@@ -67,7 +68,18 @@ export default function OutstandingView() {
       .catch(() => setLoading(false));
   }, []);
 
-  useEffect(() => { fetchData(filter); const t = setInterval(() => fetchData(filter), 30000); return () => clearInterval(t); }, [fetchData]);
+  useEffect(() => {
+    fetchData(filter);
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchData(filter); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [fetchData]);
+
+  useSyncStream(['purchase', 'payment'], () => fetchData(filter));
 
   const upd = (key: keyof FilterState, val: string) => {
     const next = { ...filter, [key]: val };

@@ -77,13 +77,34 @@ export async function GET(req: NextRequest) {
 
     // Opening balance: last entry strictly before filter start
     let openingBalance: number | null = null;
-    if (filterStart && bankAccountId) {
-      const prev = await prisma.bankStatement.findFirst({
-        where:   { bankAccountId, date: { lt: filterStart } },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        select:  { balance: true },
+    if (bankAccountId) {
+      // Fetch account's recorded opening balance as fallback when no prior statements exist
+      const acct = await prisma.bankAccount.findUnique({
+        where: { id: bankAccountId },
+        select: { currentBalance: true },
       });
-      openingBalance = prev?.balance ?? 0;
+      const accountOpeningBal = acct?.currentBalance ?? 0;
+
+      if (filterStart) {
+        const prev = await prisma.bankStatement.findFirst({
+          where:   { bankAccountId, date: { lt: filterStart } },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+          select:  { balance: true },
+        });
+        // If no prior entries, fall back to bank account's currentBalance
+        openingBalance = prev?.balance ?? accountOpeningBal;
+      } else {
+        // period = 'all': show opening balance as the account's initial currentBalance
+        // only when there are no statements at all (so closing balance would be 0 otherwise)
+        const firstEntry = await prisma.bankStatement.findFirst({
+          where:   { bankAccountId },
+          orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+          select:  { balance: true, creditAmount: true, debitAmount: true },
+        });
+        if (!firstEntry && accountOpeningBal !== 0) {
+          openingBalance = accountOpeningBal;
+        }
+      }
     }
 
     const data = statements.map(ser);

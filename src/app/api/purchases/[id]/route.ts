@@ -84,6 +84,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (purchase.traderId)
     await prisma.trader.update({ where: { id: purchase.traderId }, data: { outstandingBalance: { decrement: purchase.saleTotalAmount } } });
 
+  // Delete associated edit requests first (no cascade set on FK)
+  await prisma.editRequest.deleteMany({ where: { purchaseId: purchase.id } });
+
   await prisma.purchase.delete({ where: { id: parseInt(params.id) } });
   return NextResponse.json({ message: 'Purchase deleted' });
 }

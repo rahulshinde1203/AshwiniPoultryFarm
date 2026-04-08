@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { emitSync } from '@/lib/sync-emitter';
 
 function serP(p: any) {
   return { ...p, _id: String(p.id), date: p.date?.toISOString(),
@@ -65,5 +66,6 @@ export async function POST(req: NextRequest) {
   await prisma.company.update({ where: { id: parseInt(company) }, data: { outstandingBalance: { increment: purchaseAmt } } });
   await prisma.trader.update({  where: { id: parseInt(trader) },  data: { outstandingBalance: { increment: saleAmt } } });
 
+  emitSync('purchase');
   return NextResponse.json({ purchase: { ...purchase, _id: String(purchase.id) } }, { status: 201 });
 }

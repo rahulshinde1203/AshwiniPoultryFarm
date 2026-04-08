@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { emitSync } from '@/lib/sync-emitter';
 
 function serPm(p: any) {
   return { ...p, _id: String(p.id), date: p.date?.toISOString(),
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
               amount: parseFloat(amount), notes: notes || '', status: 'pending',
               createdBy: parseInt((session!.user as any).id) },
     });
+    emitSync('payment');
     return NextResponse.json({ payment: { ...payment, _id: String(payment.id) } }, { status: 201 });
   }
 
@@ -81,5 +83,6 @@ export async function POST(req: NextRequest) {
             notes: notes || '', status: 'pending',
             createdBy: parseInt((session!.user as any).id) },
   });
+  emitSync('payment');
   return NextResponse.json({ payment: { ...payment, _id: String(payment.id) } }, { status: 201 });
 }

@@ -15,8 +15,9 @@ const adminLinks = [
   { href: '/dashboard/admin/expense-types',  label: 'Expense Types',   icon: '🏷️' },
   { href: '/dashboard/admin/edit-requests',  label: 'Edit History',    icon: '📝' },
   { href: '/dashboard/admin/payments',       label: 'View Payments',   icon: '💳' },
-  { href: '/dashboard/admin/ledger',         label: 'Ledger Report',   icon: '📒' },
-  { href: '/dashboard/admin/bank-statements',label: 'Bank Statements', icon: '📑' },
+  { href: '/dashboard/admin/ledger',           label: 'Ledger Report',    icon: '📒' },
+  { href: '/dashboard/admin/opening-balances',label: 'Opening Balances', icon: '🏁' },
+  { href: '/dashboard/admin/bank-statements', label: 'Bank Statements',  icon: '📑' },
   { href: '/dashboard/admin/chat',           label: 'Team Chat',       icon: '💬' },
 ];
 

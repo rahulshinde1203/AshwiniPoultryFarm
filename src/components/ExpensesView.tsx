@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import { toast } from 'sonner';
 
 type PeriodType = 'all' | 'month' | 'custom';
@@ -37,12 +38,24 @@ export default function ExpensesView({ readOnly = false }: { readOnly?: boolean 
   const [filterType,  setFilterType]  = useState('');
   const [filterBank,  setFilterBank]  = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     fetch('/api/expenses').then(r => r.ok ? r.json() : { expenses: [] }).then(d => setExpenses(d.expenses || []));
     fetch('/api/expense-types').then(r => r.ok ? r.json() : { expenseTypes: [] }).then(d => setExpenseTypes(d.expenseTypes || []));
     fetch('/api/bank-accounts').then(r => r.ok ? r.json() : { accounts: [] }).then(d => setBankAccounts(d.accounts || []));
-  };
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['expense'], load);
 
   const filtered = useMemo(() => {
     const now = new Date();

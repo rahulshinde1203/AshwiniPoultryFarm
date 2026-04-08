@@ -3,6 +3,7 @@ import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
 import { syncBankStatement } from '@/lib/bank-statement-sync';
 import { notifyUser } from '@/lib/notifications';
+import { emitSync } from '@/lib/sync-emitter';
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const { error, session } = await requireAuth(['accountant', 'admin']);
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       link: '/dashboard/salesperson/payments',
     });
 
+    emitSync('payment');
     return NextResponse.json({ payment: { ...updated, _id: String(updated.id) } });
 
   } else if (action === 'reject') {
@@ -127,6 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       link: '/dashboard/salesperson/payments',
     });
 
+    emitSync('payment');
     return NextResponse.json({ payment: { ...updated, _id: String(updated.id) } });
   }
 

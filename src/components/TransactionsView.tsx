@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import { toast } from 'sonner';
 
 type DateFilter = 'all' | 'month' | 'custom';
@@ -34,7 +35,7 @@ export default function TransactionsView({ readOnly = false, canDelete = false }
   const [filterCompany, setFilterCompany] = useState('');
   const [filterSalesperson, setFilterSalesperson] = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
     Promise.all([
       fetch('/api/purchases').then(r => r.ok ? r.json() : { purchases: [] }),
@@ -48,9 +49,20 @@ export default function TransactionsView({ readOnly = false, canDelete = false }
       setSalespersons(usr.users || []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['purchase'], load);
 
   const filtered = useMemo(() => {
     const now = new Date();

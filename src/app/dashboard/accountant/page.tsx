@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const YEARS  = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
@@ -20,7 +21,7 @@ export default function AccountantDashboard() {
   const [customStart, setCustomStart] = useState('');
   const [customEnd,   setCustomEnd]   = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     Promise.all([
       fetch('/api/payments').then(r => r.ok ? r.json() : { payments: [] }),
       fetch('/api/expenses').then(r => r.ok ? r.json() : { expenses: [] }),
@@ -45,8 +46,20 @@ export default function AccountantDashboard() {
       setPurchases(pur.purchases || []);
       setLoading(false);
     }).catch(() => setLoading(false));
-  };
-  useEffect(()=>{ load(); const _id = setInterval(load, 30000); return () => clearInterval(_id); },[]);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['purchase', 'payment', 'expense'], load);
 
   const filtered = purchases.filter(r => {
     const d = new Date(r.date); const now = new Date();

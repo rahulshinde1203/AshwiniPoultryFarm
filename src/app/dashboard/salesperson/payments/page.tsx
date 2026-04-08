@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import { toast } from 'sonner';
 
 type DateFilter = 'all' | 'month' | 'custom';
@@ -49,13 +50,25 @@ export default function SalespersonPaymentsPage() {
   const [filterFor, setFilterFor]     = useState<'all'|'trader'|'company'>('all');
   const [filterStatus, setFilterStatus] = useState<'all'|'pending'|'verified'|'rejected'>('all');
 
-  const load = () => {
+  const load = useCallback(() => {
     fetch('/api/payments').then(r=>r.ok?r.json():{payments:[]}).then(d=>setPayments(d.payments||[]));
     fetch('/api/traders').then(r=>r.ok?r.json():{traders:[]}).then(d=>setTraders(d.traders||[]));
     fetch('/api/companies').then(r=>r.ok?r.json():{companies:[]}).then(d=>setCompanies(d.companies||[]));
     fetch('/api/bank-accounts').then(r=>r.ok?r.json():{accounts:[]}).then(d=>setBankAccounts(d.accounts||[]));
-  };
-  useEffect(()=>{ load(); const _id = setInterval(load, 30000); return () => clearInterval(_id); },[]);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['payment'], load);
 
   const isCompany = form.paymentFor === 'company';
   const isCheque  = form.paymentMethod === 'Cheque';

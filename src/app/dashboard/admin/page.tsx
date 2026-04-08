@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSyncStream } from '@/hooks/useSyncStream';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -109,7 +110,7 @@ export default function AdminDashboard() {
   const [customStart,  setCustomStart]  = useState('');
   const [customEnd,    setCustomEnd]    = useState('');
 
-  const load = () => {
+  const load = useCallback(() => {
     Promise.all([
       fetch('/api/purchases').then(r => r.ok ? r.json() : { purchases: [] }),
       fetch('/api/expenses').then(r => r.ok ? r.json() : { expenses: [] }),
@@ -137,8 +138,20 @@ export default function AdminDashboard() {
       });
       setLoading(false);
     }).catch(() => setLoading(false));
-  };
-  useEffect(()=>{ load(); const _id = setInterval(load, 30000); return () => clearInterval(_id); },[]);
+  }, []);
+
+  useEffect(() => {
+    load();
+    const onVisible = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [load]);
+
+  useSyncStream(['purchase', 'payment', 'expense'], load);
 
   /* ── filter purchases + expenses by period ── */
   const filtered = useMemo(() => {

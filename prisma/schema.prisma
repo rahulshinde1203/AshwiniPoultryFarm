@@ -78,6 +78,8 @@ model User {
   editRequestsReview EditRequest[]  @relation("EditRequestReview")
   notifications    Notification[]
   chatMessages     ChatMessage[]
+  openingBalances        SalespersonOpeningBalance[] @relation("OpeningBalanceSalesperson")
+  createdOpeningBalances SalespersonOpeningBalance[] @relation("OpeningBalanceCreatedBy")
 
   @@map("users")
 }
@@ -131,6 +133,27 @@ model Company {
   bankAccounts CompanyBankAccount[]
 
   @@map("companies")
+}
+
+// ─── SALESPERSON OPENING BALANCE ─────────────────────────────
+
+model SalespersonOpeningBalance {
+  id            Int        @id @default(autoincrement())
+  salespersonId Int
+  partyType     PaymentFor                // trader | company
+  partyId       Int
+  amount        Float      @default(0)   // positive = party owes SP; negative = SP owes party
+  notes         String     @default("")
+  createdBy     Int
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  salesperson   User @relation("OpeningBalanceSalesperson", fields: [salespersonId], references: [id])
+  createdByUser User @relation("OpeningBalanceCreatedBy",   fields: [createdBy],     references: [id])
+
+  @@unique([salespersonId, partyType, partyId])
+  @@index([salespersonId])
+  @@map("salesperson_opening_balances")
 }
 
 // ─── COMPANY BANK ACCOUNT (embedded array → separate table) ──

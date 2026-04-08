@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
 import { syncBankStatement } from '@/lib/bank-statement-sync';
+import { emitSync } from '@/lib/sync-emitter';
 
 function ser(e: any) {
   return { ...e, _id: String(e.id), date: e.date?.toISOString(),
@@ -69,5 +70,6 @@ export async function POST(req: NextRequest) {
     console.error('Bank statement sync error:', syncErr);
   }
 
+  emitSync('expense');
   return NextResponse.json({ expense: ser(expense) }, { status: 201 });
 }

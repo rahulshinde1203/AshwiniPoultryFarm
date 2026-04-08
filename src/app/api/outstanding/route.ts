@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = prisma as any;
+
 function dayBounds(d: string) {
   const dt = new Date(d);
   return {
@@ -80,10 +83,11 @@ export async function GET(req: NextRequest) {
     outstandingNet:    number;
     confirmedPayments: number;
     purchaseCount:     number;
+    openingBalance:    number;
   };
 
   const emptyBal = (): PartyBalance => ({
-    invoiceTotal: 0, outstandingNet: 0, confirmedPayments: 0, purchaseCount: 0,
+    invoiceTotal: 0, outstandingNet: 0, confirmedPayments: 0, purchaseCount: 0, openingBalance: 0,
   });
 
   const traderMap: Record<number, PartyBalance> = {};
@@ -101,11 +105,6 @@ export async function GET(req: NextRequest) {
       if (!traderMap[pay.traderId]) traderMap[pay.traderId] = emptyBal();
       traderMap[pay.traderId].confirmedPayments += pay.amount;
     }
-  }
-
-  for (const id of Object.keys(traderMap)) {
-    const bal = traderMap[Number(id)];
-    bal.outstandingNet = bal.invoiceTotal - bal.confirmedPayments;
   }
 
   // ════════════════════════════════════════════════════════════
@@ -130,9 +129,38 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── Stored opening balances ──────────────────────────────────────────────
+  // Always fetch: filter by salesperson if scoped, otherwise sum all salespersons (admin/accountant global view)
+  {
+    const obWhere: any = {};
+    if (createdByFilter) obWhere.salespersonId = createdByFilter;
+    if (traderId)        { obWhere.partyId = traderId;   obWhere.partyType = 'trader'; }
+    if (companyId)       { obWhere.partyId = companyId;  obWhere.partyType = 'company'; }
+
+    const openingBals = await db.salespersonOpeningBalance.findMany({
+      where: obWhere,
+      select: { partyType: true, partyId: true, amount: true },
+    });
+    for (const ob of openingBals) {
+      if (ob.partyType === 'trader') {
+        if (!traderMap[ob.partyId]) traderMap[ob.partyId] = emptyBal();
+        traderMap[ob.partyId].openingBalance += ob.amount;
+      } else if (ob.partyType === 'company') {
+        if (!companyMap[ob.partyId]) companyMap[ob.partyId] = emptyBal();
+        companyMap[ob.partyId].openingBalance += ob.amount;
+      }
+    }
+  }
+
+  // ── Compute final outstandingNet (invoices - payments + opening balance) ─
+  for (const id of Object.keys(traderMap)) {
+    const bal = traderMap[Number(id)];
+    bal.outstandingNet = bal.invoiceTotal - bal.confirmedPayments + bal.openingBalance;
+  }
+
   for (const id of Object.keys(companyMap)) {
     const bal = companyMap[Number(id)];
-    bal.outstandingNet = bal.invoiceTotal - bal.confirmedPayments;
+    bal.outstandingNet = bal.invoiceTotal - bal.confirmedPayments + bal.openingBalance;
   }
 
   // ── Build party lists ────────────────────────────────────────────────────
@@ -163,6 +191,7 @@ export async function GET(req: NextRequest) {
       invoiceTotal:      +bal.invoiceTotal.toFixed(2),
       outstandingNet:    +bal.outstandingNet.toFixed(2),
       confirmedPayments: +bal.confirmedPayments.toFixed(2),
+      openingBalance:    +bal.openingBalance.toFixed(2),
       purchaseCount:     bal.purchaseCount,
       status:            balanceStatus(bal.outstandingNet),
     };
@@ -175,6 +204,7 @@ export async function GET(req: NextRequest) {
       invoiceTotal:      +bal.invoiceTotal.toFixed(2),
       outstandingNet:    +bal.outstandingNet.toFixed(2),
       confirmedPayments: +bal.confirmedPayments.toFixed(2),
+      openingBalance:    +bal.openingBalance.toFixed(2),
       purchaseCount:     bal.purchaseCount,
       status:            balanceStatus(bal.outstandingNet),
     };

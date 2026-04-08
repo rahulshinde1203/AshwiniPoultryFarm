@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const db = prisma as any;
+
 function dayBounds(d: string) {
   const dt = new Date(d);
   return {
@@ -71,6 +74,32 @@ export async function GET(req: NextRequest) {
   // Use `lt: startDate` (strictly before period start) — no 1ms edge case.
   let openingBalanceRow: any = null;
 
+  // Fetch stored pre-system opening balance(s) for this party
+  let storedBal = 0;
+  if (partyId) {
+    if (isSP) {
+      // Salesperson: only their own opening balance for this party
+      const ob = await db.salespersonOpeningBalance.findUnique({
+        where: {
+          salespersonId_partyType_partyId: {
+            salespersonId: userId,
+            partyType:     partyType as any,
+            partyId:       partyId,
+          },
+        },
+        select: { amount: true },
+      });
+      storedBal = ob?.amount ?? 0;
+    } else {
+      // Admin / accountant: sum all salespersons' opening balances for this party
+      const obs = await db.salespersonOpeningBalance.findMany({
+        where: { partyType: partyType as any, partyId: partyId },
+        select: { amount: true },
+      });
+      storedBal = obs.reduce((sum: number, ob: any) => sum + (ob.amount ?? 0), 0);
+    }
+  }
+
   if (startDate) {
     const prevPurchaseWhere: any = { date: { lt: startDate } };
     const prevPaymentWhere:  any = { date: { lt: startDate }, status: 'verified' };
@@ -95,7 +124,8 @@ export async function GET(req: NextRequest) {
       ? (prevPurchases._sum.saleTotalAmount     ?? 0)
       : (prevPurchases._sum.purchaseTotalAmount ?? 0);
     const prevPaid    = prevPayments._sum.amount ?? 0;
-    const openingBal  = +(prevInvoice - prevPaid).toFixed(2);
+    const txnOpeningBal = +(prevInvoice - prevPaid).toFixed(2);
+    const totalOpeningBal = +(txnOpeningBal + storedBal).toFixed(2);
 
     // Label: "before April 2026" / "before 07 Apr 2026" etc.
     const beforeLabel = startDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -103,7 +133,25 @@ export async function GET(req: NextRequest) {
       rowType:        'opening',
       date:           new Date(startDate.getTime() - 1).toISOString(), // 1 ms before period — for display only
       description:    `Opening Balance (before ${beforeLabel})`,
-      closingBalance: openingBal,
+      closingBalance: totalOpeningBal,
+      balanceDelta:   0,
+      vehicleNumber:  '',
+      numberOfBirds:  null,
+      totalWeight:    null,
+      avgWeight:      null,
+      rate:           null,
+      totalAmount:    null,
+      creditDebitAmt: null,
+      paymentMethod:  '',
+      transactionId:  '',
+    };
+  } else if (storedBal !== 0) {
+    // period = 'all' but there's a stored pre-system balance — show it as first row
+    openingBalanceRow = {
+      rowType:        'opening',
+      date:           new Date(0).toISOString(), // epoch — always sorts first
+      description:    'Opening Balance (pre-system)',
+      closingBalance: storedBal,
       balanceDelta:   0,
       vehicleNumber:  '',
       numberOfBirds:  null,

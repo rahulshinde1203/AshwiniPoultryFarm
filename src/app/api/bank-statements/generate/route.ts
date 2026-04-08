@@ -94,13 +94,19 @@ export async function POST(req: NextRequest) {
   // Sort chronologically
   entries.sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  // Opening balance = last entry before this period
-  const prev = await prisma.bankStatement.findFirst({
-    where:   { bankAccountId: bId, date: { lt: start } },
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-    select:  { balance: true },
-  });
-  let running = prev?.balance ?? 0;
+  // Opening balance = last entry before this period; fall back to account's currentBalance
+  const [prev, acct] = await Promise.all([
+    prisma.bankStatement.findFirst({
+      where:   { bankAccountId: bId, date: { lt: start } },
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      select:  { balance: true },
+    }),
+    prisma.bankAccount.findUnique({
+      where:  { id: bId },
+      select: { currentBalance: true },
+    }),
+  ]);
+  let running = prev?.balance ?? acct?.currentBalance ?? 0;
 
   // Create entries
   const created = [];
@@ -124,7 +130,7 @@ export async function POST(req: NextRequest) {
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
     select:  { id: true, creditAmount: true, debitAmount: true },
   });
-  let cascadeRunning = prev?.balance ?? 0;
+  let cascadeRunning = prev?.balance ?? acct?.currentBalance ?? 0;
   for (const s of allFromStart) {
     cascadeRunning = +(cascadeRunning + (s.creditAmount ?? 0) - (s.debitAmount ?? 0)).toFixed(2);
     await prisma.bankStatement.update({ where: { id: s.id }, data: { balance: cascadeRunning } });
