@@ -48,12 +48,18 @@ export async function GET(req: NextRequest) {
 
     let openingBalance = 0;
     if (filterStart) {
-      const prev = await prisma.bankStatement.findFirst({
-        where: { bankAccountId, date: { lt: filterStart } },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
-        select: { balance: true },
-      });
-      openingBalance = prev?.balance ?? 0;
+      const [prev, acct] = await Promise.all([
+        prisma.bankStatement.findFirst({
+          where:   { bankAccountId, date: { lt: filterStart } },
+          orderBy: [{ date: 'desc' }, { id: 'desc' }],
+          select:  { balance: true },
+        }),
+        prisma.bankAccount.findUnique({
+          where:  { id: bankAccountId },
+          select: { openingBalance: true },
+        }),
+      ]);
+      openingBalance = prev?.balance ?? acct?.openingBalance ?? 0;
     }
 
     const totalCredit    = statements.reduce((s, x) => s + x.creditAmount, 0);
