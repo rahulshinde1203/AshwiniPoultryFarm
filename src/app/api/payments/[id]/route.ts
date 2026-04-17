@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db/prisma';
 import { requireAuth } from '@/lib/auth/middleware';
+import { removeBankStatement } from '@/lib/bank-statement-sync';
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const { error } = await requireAuth(['admin', 'accountant']);
@@ -12,14 +13,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   // If payment was verified, reverse the outstanding balance changes before deleting
   if (payment.status === 'verified') {
     if (payment.paymentFor === 'trader' && payment.traderId) {
-      // Reverse purchase outstandingAmount deductions (re-add the amount)
-      // We add back to trader's outstanding balance
       await prisma.trader.update({
         where: { id: payment.traderId },
         data: { outstandingBalance: { increment: payment.amount } },
       });
-      // Note: reversing individual purchase.outstandingAmount is complex;
-      // the outstanding page recalculates from payments anyway so balance is corrected
     }
     if (payment.paymentFor === 'company' && payment.companyId) {
       await prisma.company.update({
@@ -27,6 +24,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
         data: { outstandingBalance: { increment: payment.amount } },
       });
     }
+
+    // Remove the auto-generated bank statement entry and recalculate subsequent balances
+    const sourceType = payment.paymentFor === 'trader' ? 'payment_trader' : 'payment_company';
+    await removeBankStatement({ sourceType, sourceId: payment.id });
   }
 
   await prisma.payment.delete({ where: { id: parseInt(params.id) } });
